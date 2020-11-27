@@ -1080,6 +1080,8 @@ private:
     /** copy between framebuffers*/
     void _copyfb(uint16_t * fb_dst, const uint16_t * fb_src)
         {
+        memcpy(fb_dst, fb_src, ILI9341_T4_NB_PIXELS*2); 
+        /*
         if (((((size_t)fb_dst) & 3) == 0) && ((((size_t)fb_src) & 3) == 0))
             { // use fast aligned copy
             uint32_t* f1 = (uint32_t*)fb_dst;
@@ -1095,6 +1097,7 @@ private:
             { // falls back to slow copy. 
             for (int i = 0; i < ILI9341_T4_NB_PIXELS; i++) fb_dst[i] = fb_src[i];                
             }
+        */
         }
 
 

@@ -48,6 +48,7 @@ namespace ILI9341_T4
     * - DiffBuff      : diff using user-supplied memory.
     * - DiffBuffStatic: diff using static memory allocation.
     * - DiffBuffDummy : diff without memory alloc holding only trivial diffs (used for vsync).
+    * 
     *******************************************************************************************/
     class DiffBuffBase
     {
@@ -144,8 +145,8 @@ namespace ILI9341_T4
         * Read the next instruction in the diff.
         * 
         * - returns INSTRUCTION: in this case  x, y, len are updated to contain the 
-            instruction meaning: 
-			  'copy the [len] next pixels starting from offset [x] + width()*[y]'
+        *   instruction meaning: 
+        *    'copy the [len] next pixels starting from offset [x] + width()*[y]'
         * 
         * - returns NEW_SUBFRAME. the variables x,y,len are NOT changed but 
         *   subFrameSyncTimes() can now be called to find the subframe relative
@@ -190,7 +191,7 @@ namespace ILI9341_T4
         * Constructor. Set the buffer and its buffer size.
         * sizebuf should not be too small (at least PADDING but say 1K to be sure).
         **/
-        DiffBuff(uint8_t* buffer, size_t sizebuf) : _tab(buffer), _sizebuf(sizebuf - PADDING), _posw(0), _posr(0), _nbsubframe(0), _stride(0), _height(0), _r_cont(false)
+        DiffBuff(uint8_t* buffer, size_t sizebuf) : _tab(buffer), _sizebuf(sizebuf - PADDING), _posw(0), _posr(0), _nbsubframe(0), _stride(0), _height(0), _scale(1),  _r_cont(false)
             {
             if (_sizebuf > 0) _write_encoded(TAG_END);
             _posw = 0;
@@ -199,19 +200,13 @@ namespace ILI9341_T4
             }
 
 
-        virtual void computeDiff(uint16_t* fb_old, const uint16_t* fb_new, int lx, int ly, int orientation, int nb_split, int gap, bool copy_new_over_old) override
-            {
-            if (copy_new_over_old)
-                _computeDiff<true>(fb_old, fb_new, lx, ly, orientation, nb_split, gap);
-            else
-                _computeDiff<false>(fb_old, fb_new, lx, ly, orientation, nb_split, gap);
-            }
-
+        virtual void computeDiff(uint16_t* fb_old, const uint16_t* fb_new, int lx, int ly, int orientation, int nb_split, int gap, bool copy_new_over_old) override;
+          
 
         virtual int nbSubFrame() const override { return _nbsubframe; }
 
 
-        virtual int width() const override { return _stride; }
+        virtual int width() const override { return _stride*_scale; }
 
 
         virtual int height() const  override { return _height; }
@@ -289,7 +284,7 @@ namespace ILI9341_T4
 
 
         /**
-        * Return the std on the size of the diff created.
+        * Return the std on the size of the diffs created.
         **/
         uint32_t statsStdSize() const
             {
@@ -364,7 +359,7 @@ namespace ILI9341_T4
         int _stride;                        // the framebuffer stride ( = width)
         int _height;                        // the framebuffer height
         int _orientation;                   // the framebuffer orientation. 
-
+        int _scale;                         // either 1 or 2. Value (ie positions) in the diff buffer are mutliplied by this value when reading. 
 
         /* member variables used when reading the diff */
 
@@ -481,23 +476,23 @@ namespace ILI9341_T4
         /**
         * templated version of computeDiff.
         **/
-        template<bool COPY_NEW_OVER_OLD>
-        void _computeDiff(uint16_t* fb_old, const uint16_t* fb_new, int lx, int ly, int orientation, int nb_split, int gap);
+        template<bool COPY_NEW_OVER_OLD, typename T>
+        void _computeDiff(T * fb_old, const T * fb_new, int lx, int ly, int orientation, int nb_split, int gap);
 
 
         /**
         * write the diff of two framebuffers inside a sub-frame.
         * templated on COPY_OVER_OLD parameter. 
         **/
-        template<bool COPY_NEW_OVER_OLD>
-        void _computeSubFrame(uint16_t* fb_old, const uint16_t* fb_new, const int x, const int y, const int lx, const int ly, const int stride, const int gap);
+        template<bool COPY_NEW_OVER_OLD, typename T>
+        void _computeSubFrame(T * fb_old, const T * fb_new, const int x, const int y, const int lx, const int ly, const int stride, const int gap);
 
 
         /**
         * as above, but templated also on EXPAND_LOOP value.
         **/
-        template<bool COPY_NEW_OVER_OLD, int EXPAND_LOOP>
-        void _computeSubFrame2(uint16_t* fb_old, const uint16_t* fb_new, const int x, const int y, const int lx, const int ly, const int stride, const int gap);
+        template<bool COPY_NEW_OVER_OLD, int EXPAND_LOOP, typename T>
+        void _computeSubFrame2(T * fb_old, const T * fb_new, const int x, const int y, const int lx, const int ly, const int stride, const int gap);
 
 
     };

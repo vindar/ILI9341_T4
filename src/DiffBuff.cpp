@@ -33,8 +33,30 @@ namespace ILI9341_T4
     ****************************************************************************************/
 
 
-    template<bool COPY_NEW_OVER_OLD>
-    void DiffBuff::_computeDiff(uint16_t* fb_old, const uint16_t* fb_new, int lx, int ly, int orientation, int nb_split, int gap)
+    void DiffBuff::computeDiff(uint16_t* fb_old, const uint16_t* fb_new, int lx, int ly, int orientation, int nb_split, int gap, bool copy_new_over_old)
+        {
+        _scale = (((((size_t)fb_old) & 3) == 0) && ((((size_t)fb_new) & 3) == 0) && ((lx & 1) == 0)) ? 2 : 1; // can be treated as uint32_t ? yes = 2, no = 1.                     
+        if (_scale == 2)
+            { // buffers are 4 bytes aligned and lx is even : we can work with uint32_t for speedup.                   
+            gap = (gap >> 1) + ((gap & 1) ? 1 : 0);
+            if (copy_new_over_old)
+                _computeDiff<true, uint32_t>((uint32_t*)fb_old, (const uint32_t*)fb_new, lx / 2, ly, orientation, nb_split, gap);
+            else
+                _computeDiff<false, uint32_t>((uint32_t*)fb_old, (const uint32_t*)fb_new, lx / 2, ly, orientation, nb_split, gap);
+            }
+        else
+            { // work with uint16_t
+            if (copy_new_over_old)
+                _computeDiff<true, uint16_t>((uint16_t*)fb_old, (const uint16_t*)fb_new, lx, ly, orientation, nb_split, gap);
+            else
+                _computeDiff<false, uint16_t>((uint16_t*)fb_old, (const uint16_t*)fb_new, lx, ly, orientation, nb_split, gap);
+            }
+
+        }
+
+
+    template<bool COPY_NEW_OVER_OLD, typename T>
+    void DiffBuff::_computeDiff(T * fb_old, const T * fb_new, int lx, int ly, int orientation, int nb_split, int gap)
         {
         elapsedMicros em; // for stats. 
         if (gap < 1) gap = 1;
@@ -58,32 +80,32 @@ namespace ILI9341_T4
             case TOP_TO_BOTTOM:
                 {
                 int sy = _getsplit(ly, nb_split);
-                for (int k = 0; k < (nb_split - 1); k++) _computeSubFrame<COPY_NEW_OVER_OLD>(fb_old, fb_new, 0, (sy * k), lx, sy, _stride, gap);
-                _computeSubFrame<COPY_NEW_OVER_OLD>(fb_old, fb_new, 0, sy * (nb_split - 1), lx, ly - (sy * (nb_split - 1)), _stride, gap);
+                for (int k = 0; k < (nb_split - 1); k++) _computeSubFrame<COPY_NEW_OVER_OLD, T>(fb_old, fb_new, 0, (sy * k), lx, sy, _stride, gap);
+                _computeSubFrame<COPY_NEW_OVER_OLD,T>(fb_old, fb_new, 0, sy * (nb_split - 1), lx, ly - (sy * (nb_split - 1)), _stride, gap);
                 break;
                 }
 
             case LEFT_TO_RIGHT:
                 {
                 int sx = _getsplit(lx, nb_split);
-                for (int k = 0; k < (nb_split - 1); k++) _computeSubFrame<COPY_NEW_OVER_OLD>(fb_old, fb_new, (sx * k), 0, sx, ly, _stride, gap);
-                _computeSubFrame<COPY_NEW_OVER_OLD>(fb_old, fb_new, sx * (nb_split - 1), 0, lx - (sx * (nb_split - 1)), ly, _stride, gap);
+                for (int k = 0; k < (nb_split - 1); k++) _computeSubFrame<COPY_NEW_OVER_OLD, T>(fb_old, fb_new, (sx * k), 0, sx, ly, _stride, gap);
+                _computeSubFrame<COPY_NEW_OVER_OLD, T>(fb_old, fb_new, sx * (nb_split - 1), 0, lx - (sx * (nb_split - 1)), ly, _stride, gap);
                 break;
                 }
 
             case BOTTOM_TO_TOP:
                 {
                 int sy = _getsplit(ly, nb_split);
-                for (int k = 0; k < (nb_split - 1); k++) _computeSubFrame<COPY_NEW_OVER_OLD>(fb_old, fb_new, 0, ly - (sy * (k + 1)), lx, sy, _stride, gap);
-                _computeSubFrame<COPY_NEW_OVER_OLD>(fb_old, fb_new, 0, 0, lx, ly - (sy * (nb_split - 1)), _stride, gap);
+                for (int k = 0; k < (nb_split - 1); k++) _computeSubFrame<COPY_NEW_OVER_OLD, T>(fb_old, fb_new, 0, ly - (sy * (k + 1)), lx, sy, _stride, gap);
+                _computeSubFrame<COPY_NEW_OVER_OLD, T>(fb_old, fb_new, 0, 0, lx, ly - (sy * (nb_split - 1)), _stride, gap);
                 break;
                 }
 
             case RIGHT_TO_LEFT:
                 {
                 int sx = _getsplit(lx, nb_split);
-                for (int k = 0; k < (nb_split - 1); k++) _computeSubFrame<COPY_NEW_OVER_OLD>(fb_old, fb_new, lx - (sx * (k + 1)), 0, sx, ly, _stride, gap);
-                _computeSubFrame<COPY_NEW_OVER_OLD>(fb_old, fb_new, 0, 0, lx - (sx * (nb_split - 1)), ly, _stride, gap);
+                for (int k = 0; k < (nb_split - 1); k++) _computeSubFrame<COPY_NEW_OVER_OLD, T>(fb_old, fb_new, lx - (sx * (k + 1)), 0, sx, ly, _stride, gap);
+                _computeSubFrame<COPY_NEW_OVER_OLD, T>(fb_old, fb_new, 0, 0, lx - (sx * (nb_split - 1)), ly, _stride, gap);
                 break;
                 }
             }
@@ -109,8 +131,8 @@ namespace ILI9341_T4
 
 
 
-    template<bool COPY_NEW_OVER_OLD>
-    void DiffBuff::_computeSubFrame(uint16_t* fb_old, const uint16_t* fb_new, const int x, const int y, const int lx, const int ly, const int stride, const int gap)
+    template<bool COPY_NEW_OVER_OLD, typename T>
+    void DiffBuff::_computeSubFrame(T * fb_old, const T * fb_new, const int x, const int y, const int lx, const int ly, const int stride, const int gap)
         {
         if (_nbsubframe >= MAX_NB_SUBFRAME) return; // should not happen, but safety precaution anyway. 
         _nbsubframe++;
@@ -121,9 +143,9 @@ namespace ILI9341_T4
         _write_encoded(lx);
         _write_encoded(ly);
         if (lx % TRY_EXPAND_LOOP == 0)
-            _computeSubFrame2<COPY_NEW_OVER_OLD, TRY_EXPAND_LOOP>(fb_old, fb_new, x, y, lx, ly, stride, gap);  // ok expand the loop
+            _computeSubFrame2<COPY_NEW_OVER_OLD, TRY_EXPAND_LOOP, T>(fb_old, fb_new, x, y, lx, ly, stride, gap);  // ok expand the loop
         else
-            _computeSubFrame2<COPY_NEW_OVER_OLD, 1>(fb_old, fb_new, x, y, lx, ly, stride, gap); // do not expand lop
+            _computeSubFrame2<COPY_NEW_OVER_OLD, 1, T>(fb_old, fb_new, x, y, lx, ly, stride, gap); // do not expand lop
         }
 
 
@@ -142,8 +164,8 @@ namespace ILI9341_T4
                                               else cgap++; }                                                  
 
 
-    template<bool COPY_NEW_OVER_OLD, int EXPAND_LOOP>
-    void DiffBuff::_computeSubFrame2(uint16_t* fb_old, const uint16_t* fb_new, const int x, const int y, const int lx, const int ly, const int stride, const int gap)
+    template<bool COPY_NEW_OVER_OLD, int EXPAND_LOOP, typename T>
+    void DiffBuff::_computeSubFrame2(T * fb_old, const T * fb_new, const int x, const int y, const int lx, const int ly, const int stride, const int gap)
         {
         int cgap = 0; // current gap size;
         int pos = 0; // number of pixel written in diffbuf
@@ -228,9 +250,9 @@ namespace ILI9341_T4
         // we have a valid instruction in _r_x, _r_y, _r_len
         if (_r_x + _r_len <= _frame_x + _frame_lx)
             { // everything fits on the line. 
-            x = _r_x;
+            x = _r_x * _scale;
             y = _r_y;
-            len = _r_len;
+            len = _r_len * _scale;
             _r_cont = false;
             return INSTRUCTION;
             }
@@ -239,19 +261,20 @@ namespace ILI9341_T4
             { // optimization: here we can go faster and write more than a single line.       
             x = 0;
             y = _r_y;
-            if (_r_len <= (int)MAX_WRITE)
+            if (_r_len <= (int)(MAX_WRITE/_scale))
                 { // write everything. 
                 len = _r_len;
                 _r_cont = false;
                 }
             else
                 {
-                const int nbl = (int)MAX_WRITE / _stride;
+                const int nbl = (int)MAX_WRITE / (_stride*_scale);
                 len = (nbl * _stride);
                 _r_len -= len;
                 _r_y += nbl;
                 _r_cont = (_r_len > 0); // must be true but just in case.... 
                 }
+            len *= _scale;
             return INSTRUCTION;
             }
         // write a single line
@@ -262,6 +285,8 @@ namespace ILI9341_T4
         _r_x = _frame_x;
         _r_y++;
         _r_cont = true;
+        x *= _scale;
+        len *= _scale;
         return INSTRUCTION;
         }
 
@@ -419,7 +444,7 @@ namespace ILI9341_T4
                     _frame_ly = _height;
                     break;
                     }
-                }                
+                }
             _curline = 0;
             return NEW_SUBFRAME;
             }
