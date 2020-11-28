@@ -179,39 +179,68 @@ namespace ILI9341_T4
         _tcr_dc_not_assert = LPSPI_TCR_PCS(3);
         _maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(7)); // drive DC high now. 
 
-        if (_rst < 255)
-            { // Reset the screen
-            pinMode(_rst, OUTPUT);
-            digitalWrite(_rst, HIGH);
-            delay(10);
-            digitalWrite(_rst, LOW);
-            delay(20);
-            digitalWrite(_rst, HIGH);
-            delay(150);
-            }
+        for (int r = 0; r < ILI9341_T4_RETRY_INIT; r++)
+            { // sometimes, init may fail because of instable power supply. Retry in this case. 
 
-        _beginSPITransaction(_spi_clock);
-        const uint8_t* addr = init_commands;
-        while (1)
-            {
-            uint8_t count = *addr++;
-            if (count-- == 0) break;
-            _writecommand_cont(*addr++);
-            while (count-- > 0) { _writedata8_cont(*addr++); }
-            }
-        _writecommand_last(ILI9341_T4_SLPOUT); // Exit Sleep
-        _endSPITransaction();
-        delay(200); // must wait for the screen to exit sleep mode. 
-        _beginSPITransaction(_spi_clock);
-        _writecommand_last(ILI9341_T4_DISPON); // Display on
-        _endSPITransaction();
+            if (_rst < 255)
+                { // Reset the screen
+                pinMode(_rst, OUTPUT);
+                digitalWrite(_rst, HIGH);
+                delay(10);
+                digitalWrite(_rst, LOW);
+                delay(20);
+                digitalWrite(_rst, HIGH);
+                delay(150);
+                }
 
-        setRefreshMode(0);
-        _period_mode0 = _period; // save the period for fastest mode. 
-        setRefreshRate(ILI9341_T4_DEFAULT_REFRESH_RATE); // change mode if needed. 
-        statsReset();
-        _mirrorfb = nullptr; // force full redraw.
-        return (selfDiagStatus() == ILI9341_T4_SELFDIAG_OK);
+
+            _beginSPITransaction(_spi_clock / 4); // quarter speed for setup ! 
+            const uint8_t* addr = init_commands;
+            while (1)
+                {
+                uint8_t count = *addr++;
+                if (count-- == 0) break;
+                _writecommand_cont(*addr++);
+                while (count-- > 0) { _writedata8_cont(*addr++); }
+                }
+            _writecommand_last(ILI9341_T4_SLPOUT); // Exit Sleep
+            _endSPITransaction();
+            delay(200); // must wait for the screen to exit sleep mode. 
+            _beginSPITransaction(_spi_clock / 4); // quarter speed for setup ! 
+            _writecommand_last(ILI9341_T4_DISPON); // Display on
+            _endSPITransaction();
+
+            setRefreshMode(0);
+            _period_mode0 = _period; // save the period for fastest mode. 
+            setRefreshRate(ILI9341_T4_DEFAULT_REFRESH_RATE); // change mode if needed. 
+            statsReset();
+            _mirrorfb = nullptr; // force full redraw.
+
+            // if everything is ok, we should have:
+            // - Display Power Mode = 0x9C
+            // - Pixel Format = 0x5
+            // - Image Format = 0x0
+            // - Self Diagnostic = 0xC0 
+            if (_readcommand8(ILI9341_T4_RDMODE) != 0x9C)
+                { // wrong power display mode
+                continue;
+                }
+            if (_readcommand8(ILI9341_T4_RDPIXFMT) != 0x5)
+                { // wrong pixel format
+                continue;
+                }
+            if (_readcommand8(ILI9341_T4_RDIMGFMT) != 0x0)
+                { // wrong image format
+                continue;
+                }
+            if (_readcommand8(ILI9341_T4_RDSELFDIAG) != ILI9341_T4_SELFDIAG_OK)
+                { // wrong self diagnotic value
+                continue;
+                }
+            // all good, ready to warp pixels :-)
+            return true; 
+            }
+        return false; 
         }
 
 
@@ -247,7 +276,7 @@ namespace ILI9341_T4
         {
         waitUpdateAsyncComplete();
         _mirrorfb = nullptr; // force full redraw.
-        _beginSPITransaction(_spi_clock);
+        _beginSPITransaction(_spi_clock / 4); // quarter speed
         if (enable)
             {
             _writecommand_cont(ILI9341_T4_DISPOFF);
@@ -260,7 +289,7 @@ namespace ILI9341_T4
             _writecommand_cont(ILI9341_T4_DISPON);
             _writecommand_last(ILI9341_T4_SLPOUT);
             _endSPITransaction();
-            delay(5);
+            delay(20);
             }
         }
 
@@ -280,7 +309,7 @@ namespace ILI9341_T4
         //static const uint8_t MADCTL_RGB = 0x00;
         static const uint8_t MADCTL_BGR = 0x08;
         //static const uint8_t MADCTL_MH = 0x04;
-        _beginSPITransaction(_spi_clock);
+        _beginSPITransaction(_spi_clock / 4); // quarter speed
         _writecommand_cont(ILI9341_T4_MADCTL);
         switch (m)
             {
@@ -312,7 +341,7 @@ namespace ILI9341_T4
     void ILI9341Driver::invertDisplay(bool i)
         {
         waitUpdateAsyncComplete();
-        _beginSPITransaction(_spi_clock);
+        _beginSPITransaction(_spi_clock / 4); // quarter speed
         _writecommand_last(i ? ILI9341_T4_INVON : ILI9341_T4_INVOFF);
         _endSPITransaction();
         }
@@ -372,7 +401,7 @@ namespace ILI9341_T4
             diva = 1;
             }
         waitUpdateAsyncComplete();
-        _beginSPITransaction(_spi_clock);
+        _beginSPITransaction(_spi_clock / 4); // quarter speed 
         _writecommand_cont(ILI9341_T4_FRMCTR1); // Column addr set
         _writedata8_cont(diva);
         _writedata8_last(0x10 + mode);

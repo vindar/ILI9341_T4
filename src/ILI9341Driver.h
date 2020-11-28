@@ -61,10 +61,11 @@ namespace ILI9341_T4
 #define ILI9341_T4_DEFAULT_VSYNC_SPACING 2           // vsync on with framerate = refreshrate/2 = 45FPS. 
 #define ILI9341_T4_DEFAULT_DIFF_GAP 10               // default gap for diffs (typ. between 5 and 50)
 #define ILI9341_T4_DEFAULT_DIFF_SPLIT 6              // default number of split/subframes when creating diffs. 
-#define ILI9341_T4_DEFAULT_LATE_START_RATIO 0.3     // default "proportion" of the frame admissible for late frame start when using vsync. 
+#define ILI9341_T4_DEFAULT_LATE_START_RATIO 0.3      // default "proportion" of the frame admissible for late frame start when using vsync. 
 
-#define ILI9341_T4_TFTWIDTH 240                      // screen dimension x (in default orientation 0)
-#define ILI9341_T4_TFTHEIGHT 320                     // screen dimension y (in default orientation 0)
+#define ILI9341_T4_RETRY_INIT 3                     // number of times we try initialization in begin() before returning an error. 
+#define ILI9341_T4_TFTWIDTH 240                     // screen dimension x (in default orientation 0)
+#define ILI9341_T4_TFTHEIGHT 320                    // screen dimension y (in default orientation 0)
 #define ILI9341_T4_NB_PIXELS (ILI9341_T4_TFTWIDTH * ILI9341_T4_TFTHEIGHT)   // total number of pixels
 
 #define ILI9341_T4_NB_SCANLINE 162                  // scanlines are in the range [0,161]. 
