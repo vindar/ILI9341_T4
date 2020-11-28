@@ -527,6 +527,51 @@ public:
     double getLateStartRatio() const { return _late_start_ratio; }
 
 
+
+    /**
+    * Set the mask used when creating a diff to check is a pixel is the same in both framebuffers. 
+    * If the mask set is non-zero, then only the bits set in the mask are used for the comparison 
+    * so pixels with differents values may be considered equal and may not redrawn.
+    * 
+    * Setting a mask may be useful when the framebuffer being uploaded to the screen comes from
+    * a camera or another source that introduces random noise that would prevent the diff from
+    * finding large gap hence making it pretty useless. 
+    * Typically, you want to set the lower bits on each channel color to 0 so that color that
+    * are 'close' are not always redrawn (see the other method version below). 
+    * 
+    * If called without argument, the compare mask is set to 0 hence disabled and strict equality
+    * is enforced when creating diffs (default behaviour).
+    **/
+    void setCompareMask(uint16_t mask = 0)
+        {
+        if (mask == 65535) mask = 0;
+        _compare_mask = mask;
+        }
+
+
+    /**
+    * Set the compare mask by specifying for each color channel the number of lower bits
+    * that should be ignored. 
+    * 
+    * Recall the there are 5 bits for the blue and  red channel and 6 bits for the green one. 
+    **/
+    void setCompareMask(int bitskip_red, int bitskip_green, int bitskip_blue)
+        {
+        _compare_mask = (((uint16_t)(((0xFF >> bitskip_red) << bitskip_red) & 31)) << 11)
+                      | (((uint16_t)(((0xFF >> bitskip_green) << bitskip_green) & 63)) << 5)
+                      | ((uint16_t)(((0xFF >> bitskip_blue) << bitskip_blue) & 31));
+        if (_compare_mask == 65535) _compare_mask = 0; 
+        }
+
+
+    /**
+    * Return the value of the current compare_mask. 
+    * Return 0 if the mask is not set and strict comparison of pixel colors is enforced 
+    * (default behaviour).
+    **/
+    uint16_t getCompareMask() const { return _compare_mask; }
+
+
     /**
     * Set/remove one (or two) internal framebuffers.
     * 
@@ -1089,6 +1134,7 @@ private:
     volatile int _diff_gap;                     // gap when creating diffs.
     volatile int _vsync_spacing;                // update stategy / framerate divider. 
     volatile double _late_start_ratio;          // late start parameter (by how much we can miss the first sync line and still start the frame without waiting for the next refresh).
+    volatile uint16_t _compare_mask;             // the compare mask used to compare pixels when doing a diff
 
     DiffBuffBase * volatile  _diff1;             // first diff buffer
     DiffBuffBase * volatile  _diff2;             // second diff buffer (if non null, then _diff1 is also non zero). 
@@ -1187,7 +1233,6 @@ private:
 
     /** swap _fb1 and _fb2 */
     void _swapfb() { auto t = _fb1; _fb1 = _fb2; _fb2 = t; }
-
 
 
 

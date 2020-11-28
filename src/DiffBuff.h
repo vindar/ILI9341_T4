@@ -95,6 +95,16 @@ namespace ILI9341_T4
 		*                  that when the method returns, the old buffer mirrors the new one. This is faster 
         *                  than doing a diff followed by a memcpy()... 
         *
+        * compare_mask   : The default behaviour when creating a diff is to redraw every pixels that differ between 
+        *                  framebuffers however it might be useful in some case to keep pixels if they have 'close'
+        *                  colors. This is particularly useful when the framebuffer contain camera image with random
+        *                  noise which is not relevant to the image but will prevent the diff from finding large
+        *                  gap of similar pixels, making the diff basically useless and reupload the whole frame each
+        *                  time.
+        *                  If compare_mask is different from 0 and 65535 then only the color bits set to 1 in the mask
+        *                  are checked and therefore pixels that only differ in the unset bits of compare_mask will be 
+        *                  considered equal and may not be redrawn. 
+        * 
         * NOTE : this method always returns a valid diff even if it runs out of memory to store the diff. However, 
 		*        when this happens, the diff returned is (partly) trivial and this will have a negative impact on 
 		*        the upload speed. For optimal speed, the diff buffer size/gap parameter should be chosen such that
@@ -103,7 +113,7 @@ namespace ILI9341_T4
 		*        a typical diff will depend on how much changes occurs between frames but in most case, choosing 
 		*        gap=10 and a buffer size around 5K is a good starting point. 
         **/
-        virtual void computeDiff(uint16_t* fb_old, const uint16_t* fb_new, int lx, int ly, int orientation, int nb_split, int gap, bool copy_new_over_old) = 0;
+        virtual void computeDiff(uint16_t* fb_old, const uint16_t* fb_new, int lx, int ly, int orientation, int nb_split, int gap, bool copy_new_over_old, uint16_t compare_mask) = 0;
 
 
 
@@ -200,7 +210,7 @@ namespace ILI9341_T4
             }
 
 
-        virtual void computeDiff(uint16_t* fb_old, const uint16_t* fb_new, int lx, int ly, int orientation, int nb_split, int gap, bool copy_new_over_old) override;
+        virtual void computeDiff(uint16_t* fb_old, const uint16_t* fb_new, int lx, int ly, int orientation, int nb_split, int gap, bool copy_new_over_old, uint16_t compare_mask) override;
           
 
         virtual int nbSubFrame() const override { return _nbsubframe; }
@@ -477,7 +487,7 @@ namespace ILI9341_T4
         * templated version of computeDiff.
         **/
         template<bool COPY_NEW_OVER_OLD, typename T>
-        void _computeDiff(T * fb_old, const T * fb_new, int lx, int ly, int orientation, int nb_split, int gap);
+        void _computeDiff(T * fb_old, const T * fb_new, int lx, int ly, int orientation, int nb_split, int gap, const T mask);
 
 
         /**
@@ -485,15 +495,14 @@ namespace ILI9341_T4
         * templated on COPY_OVER_OLD parameter. 
         **/
         template<bool COPY_NEW_OVER_OLD, typename T>
-        void _computeSubFrame(T * fb_old, const T * fb_new, const int x, const int y, const int lx, const int ly, const int stride, const int gap);
+        void _computeSubFrame(T * fb_old, const T * fb_new, const int x, const int y, const int lx, const int ly, const int stride, const int gap, const T mask);
 
 
         /**
         * as above, but templated also on EXPAND_LOOP value.
         **/
-        template<bool COPY_NEW_OVER_OLD, int EXPAND_LOOP, typename T>
-        void _computeSubFrame2(T * fb_old, const T * fb_new, const int x, const int y, const int lx, const int ly, const int stride, const int gap);
-
+        template<bool COPY_NEW_OVER_OLD, int EXPAND_LOOP, typename T, bool USE_MASK>
+        void _computeSubFrame2(T* fb_old, const T* fb_new, const int x, const int y, const int lx, const int ly, const int stride, const int gap, const T mask);
 
     };
 
@@ -554,12 +563,12 @@ namespace ILI9341_T4
             }
 
 
-        virtual void computeDiff(uint16_t* fb_old, const uint16_t* fb_new, int lx, int ly, int orientation, int nb_split, int gap, bool copy_new_over_old) override;
+        virtual void computeDiff(uint16_t* fb_old, const uint16_t* fb_new, int lx, int ly, int orientation, int nb_split, int gap, bool copy_new_over_old, uint16_t compare_mask) override;
 
 
         void computeDummyDiff(int lx, int ly, int orientation, int nb_split)
             {
-            computeDiff(nullptr, nullptr, lx, ly, orientation, nb_split, 0, false);
+            computeDiff(nullptr, nullptr, lx, ly, orientation, nb_split, 0, false, 0);
             }
 
 

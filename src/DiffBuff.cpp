@@ -27,36 +27,38 @@ namespace ILI9341_T4
 {
 
 
-
     /***************************************************************************************
     * Implementation of DiffBuff
     ****************************************************************************************/
 
 
-    void DiffBuff::computeDiff(uint16_t* fb_old, const uint16_t* fb_new, int lx, int ly, int orientation, int nb_split, int gap, bool copy_new_over_old)
+    void DiffBuff::computeDiff(uint16_t* fb_old, const uint16_t* fb_new, int lx, int ly, int orientation, int nb_split, int gap, bool copy_new_over_old, uint16_t compare_mask)
         {
-        _scale = (((((size_t)fb_old) & 3) == 0) && ((((size_t)fb_new) & 3) == 0) && ((lx & 1) == 0)) ? 2 : 1; // can be treated as uint32_t ? yes = 2, no = 1.                     
+        if (compare_mask == 65535) compare_mask = 0; // not using mask in this case.       
+        // check if we can work with 32bit int instead of 16bit for speedup. 
+        _scale = (((((size_t)fb_old) & 3) == 0) && ((((size_t)fb_new) & 3) == 0) && ((lx & 1) == 0)) ? 2 : 1; // can be treated as uint32_t ? yes = 2, no = 1. 
         if (_scale == 2)
             { // buffers are 4 bytes aligned and lx is even : we can work with uint32_t for speedup.                   
             gap = (gap >> 1) + ((gap & 1) ? 1 : 0);
+            const uint32_t compare_mask32 = (((uint32_t)compare_mask) << 16) | ((uint32_t)compare_mask);
             if (copy_new_over_old)
-                _computeDiff<true, uint32_t>((uint32_t*)fb_old, (const uint32_t*)fb_new, lx / 2, ly, orientation, nb_split, gap);
+                _computeDiff<true, uint32_t>((uint32_t*)fb_old, (const uint32_t*)fb_new, lx / 2, ly, orientation, nb_split, gap, compare_mask32);
             else
-                _computeDiff<false, uint32_t>((uint32_t*)fb_old, (const uint32_t*)fb_new, lx / 2, ly, orientation, nb_split, gap);
+                _computeDiff<false, uint32_t>((uint32_t*)fb_old, (const uint32_t*)fb_new, lx / 2, ly, orientation, nb_split, gap, compare_mask32);
             }
         else
             { // work with uint16_t
             if (copy_new_over_old)
-                _computeDiff<true, uint16_t>((uint16_t*)fb_old, (const uint16_t*)fb_new, lx, ly, orientation, nb_split, gap);
+                _computeDiff<true, uint16_t>((uint16_t*)fb_old, (const uint16_t*)fb_new, lx, ly, orientation, nb_split, gap, compare_mask);
             else
-                _computeDiff<false, uint16_t>((uint16_t*)fb_old, (const uint16_t*)fb_new, lx, ly, orientation, nb_split, gap);
+                _computeDiff<false, uint16_t>((uint16_t*)fb_old, (const uint16_t*)fb_new, lx, ly, orientation, nb_split, gap, compare_mask);
             }
 
         }
 
 
     template<bool COPY_NEW_OVER_OLD, typename T>
-    void DiffBuff::_computeDiff(T * fb_old, const T * fb_new, int lx, int ly, int orientation, int nb_split, int gap)
+    void DiffBuff::_computeDiff(T * fb_old, const T * fb_new, int lx, int ly, int orientation, int nb_split, int gap, const T mask)
         {
         elapsedMicros em; // for stats. 
         if (gap < 1) gap = 1;
@@ -80,32 +82,32 @@ namespace ILI9341_T4
             case TOP_TO_BOTTOM:
                 {
                 int sy = _getsplit(ly, nb_split);
-                for (int k = 0; k < (nb_split - 1); k++) _computeSubFrame<COPY_NEW_OVER_OLD, T>(fb_old, fb_new, 0, (sy * k), lx, sy, _stride, gap);
-                _computeSubFrame<COPY_NEW_OVER_OLD,T>(fb_old, fb_new, 0, sy * (nb_split - 1), lx, ly - (sy * (nb_split - 1)), _stride, gap);
+                for (int k = 0; k < (nb_split - 1); k++) _computeSubFrame<COPY_NEW_OVER_OLD, T>(fb_old, fb_new, 0, (sy * k), lx, sy, _stride, gap, mask);
+                _computeSubFrame<COPY_NEW_OVER_OLD,T>(fb_old, fb_new, 0, sy * (nb_split - 1), lx, ly - (sy * (nb_split - 1)), _stride, gap, mask);
                 break;
                 }
 
             case LEFT_TO_RIGHT:
                 {
                 int sx = _getsplit(lx, nb_split);
-                for (int k = 0; k < (nb_split - 1); k++) _computeSubFrame<COPY_NEW_OVER_OLD, T>(fb_old, fb_new, (sx * k), 0, sx, ly, _stride, gap);
-                _computeSubFrame<COPY_NEW_OVER_OLD, T>(fb_old, fb_new, sx * (nb_split - 1), 0, lx - (sx * (nb_split - 1)), ly, _stride, gap);
+                for (int k = 0; k < (nb_split - 1); k++) _computeSubFrame<COPY_NEW_OVER_OLD, T>(fb_old, fb_new, (sx * k), 0, sx, ly, _stride, gap, mask);
+                _computeSubFrame<COPY_NEW_OVER_OLD, T>(fb_old, fb_new, sx * (nb_split - 1), 0, lx - (sx * (nb_split - 1)), ly, _stride, gap, mask);
                 break;
                 }
 
             case BOTTOM_TO_TOP:
                 {
                 int sy = _getsplit(ly, nb_split);
-                for (int k = 0; k < (nb_split - 1); k++) _computeSubFrame<COPY_NEW_OVER_OLD, T>(fb_old, fb_new, 0, ly - (sy * (k + 1)), lx, sy, _stride, gap);
-                _computeSubFrame<COPY_NEW_OVER_OLD, T>(fb_old, fb_new, 0, 0, lx, ly - (sy * (nb_split - 1)), _stride, gap);
+                for (int k = 0; k < (nb_split - 1); k++) _computeSubFrame<COPY_NEW_OVER_OLD, T>(fb_old, fb_new, 0, ly - (sy * (k + 1)), lx, sy, _stride, gap, mask);
+                _computeSubFrame<COPY_NEW_OVER_OLD, T>(fb_old, fb_new, 0, 0, lx, ly - (sy * (nb_split - 1)), _stride, gap, mask);
                 break;
                 }
 
             case RIGHT_TO_LEFT:
                 {
                 int sx = _getsplit(lx, nb_split);
-                for (int k = 0; k < (nb_split - 1); k++) _computeSubFrame<COPY_NEW_OVER_OLD, T>(fb_old, fb_new, lx - (sx * (k + 1)), 0, sx, ly, _stride, gap);
-                _computeSubFrame<COPY_NEW_OVER_OLD, T>(fb_old, fb_new, 0, 0, lx - (sx * (nb_split - 1)), ly, _stride, gap);
+                for (int k = 0; k < (nb_split - 1); k++) _computeSubFrame<COPY_NEW_OVER_OLD, T>(fb_old, fb_new, lx - (sx * (k + 1)), 0, sx, ly, _stride, gap, mask);
+                _computeSubFrame<COPY_NEW_OVER_OLD, T>(fb_old, fb_new, 0, 0, lx - (sx * (nb_split - 1)), ly, _stride, gap, mask);
                 break;
                 }
             }
@@ -132,7 +134,7 @@ namespace ILI9341_T4
 
 
     template<bool COPY_NEW_OVER_OLD, typename T>
-    void DiffBuff::_computeSubFrame(T * fb_old, const T * fb_new, const int x, const int y, const int lx, const int ly, const int stride, const int gap)
+    void DiffBuff::_computeSubFrame(T * fb_old, const T * fb_new, const int x, const int y, const int lx, const int ly, const int stride, const int gap, const T mask)
         {
         if (_nbsubframe >= MAX_NB_SUBFRAME) return; // should not happen, but safety precaution anyway. 
         _nbsubframe++;
@@ -143,15 +145,33 @@ namespace ILI9341_T4
         _write_encoded(lx);
         _write_encoded(ly);
         if (lx % TRY_EXPAND_LOOP == 0)
-            _computeSubFrame2<COPY_NEW_OVER_OLD, TRY_EXPAND_LOOP, T>(fb_old, fb_new, x, y, lx, ly, stride, gap);  // ok expand the loop
+            {
+            if (mask != 0)
+                {
+                _computeSubFrame2<COPY_NEW_OVER_OLD, TRY_EXPAND_LOOP, T, true>(fb_old, fb_new, x, y, lx, ly, stride, gap, mask);  // ok expand the loop
+                }
+            else
+                {
+                _computeSubFrame2<COPY_NEW_OVER_OLD, TRY_EXPAND_LOOP, T, false>(fb_old, fb_new, x, y, lx, ly, stride, gap, mask);  // ok expand the loop
+                }
+            }
         else
-            _computeSubFrame2<COPY_NEW_OVER_OLD, 1, T>(fb_old, fb_new, x, y, lx, ly, stride, gap); // do not expand lop
+            {
+            if (mask != 0)
+                {
+                _computeSubFrame2<COPY_NEW_OVER_OLD, 1, T, true>(fb_old, fb_new, x, y, lx, ly, stride, gap, mask); // do not expand lop
+                }
+            else
+                {
+                _computeSubFrame2<COPY_NEW_OVER_OLD, 1, T, false>(fb_old, fb_new, x, y, lx, ly, stride, gap, mask); // do not expand lop
+                }
+            }
         }
 
 
-    // innner loop is expanded EXPAND_LOOP times. 
-#define ILI9341_T4_DIFFBUF_INNER_LOOP(INDEX)  { if (fb_old[v + INDEX] != fb_new[v + INDEX])                     \
-                                                  {                                                             \
+// innner loop is expanded EXPAND_LOOP times. 
+
+#define ILI9341_T4_DIFFBUF_INNER_LOOP2(INDEX)     {                                                             \
                                                   if (COPY_NEW_OVER_OLD) fb_old[v + INDEX] = fb_new[v + INDEX]; \
                                                   if (cgap >= gap)                                              \
                                                       {                                                         \
@@ -160,12 +180,19 @@ namespace ILI9341_T4
                                                       pos = cpos;                                               \
                                                       }                                                         \
                                                   cgap = 0;                                                     \
-                                                  }                                                             \
-                                              else cgap++; }                                                  
+                                                  }
+
+#define ILI9341_T4_DIFFBUF_INNER_LOOP_MASK(INDEX)  { if (((fb_old[v + INDEX]) ^ (fb_new[v + INDEX])) & (mask))  \
+                                              ILI9341_T4_DIFFBUF_INNER_LOOP2(INDEX)                             \
+                                              else cgap++; }
+
+#define ILI9341_T4_DIFFBUF_INNER_LOOP(INDEX)  { if (fb_old[v + INDEX] != fb_new[v + INDEX])                     \
+                                              ILI9341_T4_DIFFBUF_INNER_LOOP2(INDEX)                             \
+                                              else cgap++; }
 
 
-    template<bool COPY_NEW_OVER_OLD, int EXPAND_LOOP, typename T>
-    void DiffBuff::_computeSubFrame2(T * fb_old, const T * fb_new, const int x, const int y, const int lx, const int ly, const int stride, const int gap)
+    template<bool COPY_NEW_OVER_OLD, int EXPAND_LOOP, typename T, bool USE_MASK>
+    void DiffBuff::_computeSubFrame2(T * fb_old, const T * fb_new, const int x, const int y, const int lx, const int ly, const int stride, const int gap, const T mask)
         {
         int cgap = 0; // current gap size;
         int pos = 0; // number of pixel written in diffbuf
@@ -177,15 +204,29 @@ namespace ILI9341_T4
             for (int i = 0; i < lx; i += EXPAND_LOOP)
                 {
                 const int v = linestart + i;
-                ILI9341_T4_DIFFBUF_INNER_LOOP(0);
                 // all conditionals below are removed at compile time
-                if (EXPAND_LOOP >= 2) ILI9341_T4_DIFFBUF_INNER_LOOP(1);
-                if (EXPAND_LOOP >= 3) ILI9341_T4_DIFFBUF_INNER_LOOP(2);
-                if (EXPAND_LOOP >= 4) ILI9341_T4_DIFFBUF_INNER_LOOP(3);
-                if (EXPAND_LOOP >= 5) ILI9341_T4_DIFFBUF_INNER_LOOP(4);
-                if (EXPAND_LOOP >= 6) ILI9341_T4_DIFFBUF_INNER_LOOP(5);
-                if (EXPAND_LOOP >= 7) ILI9341_T4_DIFFBUF_INNER_LOOP(6);
-                if (EXPAND_LOOP >= 8) ILI9341_T4_DIFFBUF_INNER_LOOP(7);
+                if (USE_MASK)
+                    {
+                    ILI9341_T4_DIFFBUF_INNER_LOOP_MASK(0);
+                    if (EXPAND_LOOP >= 2) ILI9341_T4_DIFFBUF_INNER_LOOP_MASK(1);
+                    if (EXPAND_LOOP >= 3) ILI9341_T4_DIFFBUF_INNER_LOOP_MASK(2);
+                    if (EXPAND_LOOP >= 4) ILI9341_T4_DIFFBUF_INNER_LOOP_MASK(3);
+                    if (EXPAND_LOOP >= 5) ILI9341_T4_DIFFBUF_INNER_LOOP_MASK(4);
+                    if (EXPAND_LOOP >= 6) ILI9341_T4_DIFFBUF_INNER_LOOP_MASK(5);
+                    if (EXPAND_LOOP >= 7) ILI9341_T4_DIFFBUF_INNER_LOOP_MASK(6);
+                    if (EXPAND_LOOP >= 8) ILI9341_T4_DIFFBUF_INNER_LOOP_MASK(7);
+                    }
+                else
+                    {
+                    ILI9341_T4_DIFFBUF_INNER_LOOP(0);
+                    if (EXPAND_LOOP >= 2) ILI9341_T4_DIFFBUF_INNER_LOOP(1);
+                    if (EXPAND_LOOP >= 3) ILI9341_T4_DIFFBUF_INNER_LOOP(2);
+                    if (EXPAND_LOOP >= 4) ILI9341_T4_DIFFBUF_INNER_LOOP(3);
+                    if (EXPAND_LOOP >= 5) ILI9341_T4_DIFFBUF_INNER_LOOP(4);
+                    if (EXPAND_LOOP >= 6) ILI9341_T4_DIFFBUF_INNER_LOOP(5);
+                    if (EXPAND_LOOP >= 7) ILI9341_T4_DIFFBUF_INNER_LOOP(6);
+                    if (EXPAND_LOOP >= 8) ILI9341_T4_DIFFBUF_INNER_LOOP(7);
+                    }
                 }
             }
         // no more pixels. write the last batch
@@ -194,7 +235,7 @@ namespace ILI9341_T4
             { // something to write
             if (!_write_chunk(cpos - pos - cgap, cgap)) return;
             }
-        //_write_encoded(TAG_SKIP_ALL);
+        //_write_encoded(TAG_SKIP_ALL);       
         }
 
 #undef ILI9341_T4_DIFFBUF_INNER_LOOP
@@ -374,7 +415,7 @@ namespace ILI9341_T4
     ****************************************************************************************/
 
 
-    void DiffBuffDummy::computeDiff(uint16_t* fb_old, const uint16_t* fb_new, int lx, int ly, int orientation, int nb_split, int gap, bool copy_new_over_old)
+    void DiffBuffDummy::computeDiff(uint16_t* fb_old, const uint16_t* fb_new, int lx, int ly, int orientation, int nb_split, int gap, bool copy_new_over_old, uint16_t compare_mask)
         {
         if (gap < 1) gap = 1;
         if (nb_split < 1) nb_split = 1;
