@@ -61,12 +61,14 @@ namespace ILI9341_T4
 #define ILI9341_T4_DEFAULT_VSYNC_SPACING 2           // vsync on with framerate = refreshrate/2 = 45FPS. 
 #define ILI9341_T4_DEFAULT_DIFF_GAP 10               // default gap for diffs (typ. between 5 and 50)
 #define ILI9341_T4_DEFAULT_DIFF_SPLIT 6              // default number of split/subframes when creating diffs. 
+#define ILI9341_T4_DEFAULT_LATE_START_RATIO 0.3     // default "proportion" of the frame admissible for late frame start when using vsync. 
 
 #define ILI9341_T4_TFTWIDTH 240                      // screen dimension x (in default orientation 0)
 #define ILI9341_T4_TFTHEIGHT 320                     // screen dimension y (in default orientation 0)
 #define ILI9341_T4_NB_PIXELS (ILI9341_T4_TFTWIDTH * ILI9341_T4_TFTHEIGHT)   // total number of pixels
 
 #define ILI9341_T4_NB_SCANLINE 162                  // scanlines are in the range [0,161]. 
+
 #define ILI9341_T4_MAX_VSYNC_SPACING 10             // max number of screen refresh between frames 
 #define ILI9341_T4_FAST_UNSAFE_DMA 1                // enable possibly unsafe optimizations. 
 #define ILI9341_T4_IRQ_PRIORITY 96                  // priority at which we run the irqs (dma and pit timer). Should be set low enough when using unsafe op  
@@ -496,6 +498,32 @@ public:
     * Return the number of subframe/splits per diff. 
     **/
     int getDiffSplit() const { return _diff_nb_split; }
+
+
+    /**
+    * Set how late we can be behind the initial sync line and still start uploading a frame without
+    * waiting for the next refresh for synchronization. Set a value in [0.0, 1.0]
+    * 
+    * - Choosing a small value will reduce screen tearing but may make the framerate oscillate more 
+    *   when the timing is tight.
+    * 
+    * - Choosing a large value will stabilize the framerate but at the expense of more screen tearing 
+    *   when the timing is tight.
+    *
+    * Remark: calling this method reset the statistics.
+    **/
+    void setLateStartRatio(double ratio = ILI9341_T4_DEFAULT_LATE_START_RATIO)
+        {
+        waitUpdateAsyncComplete();
+        _late_start_ratio = _clip(ratio, 0.0, 1.0);
+        statsReset();
+        }
+
+
+    /**
+    * Return the value of the "late start ratio" parameter. 
+    **/
+    double getLateStartRatio() const { return _late_start_ratio; }
 
 
     /**
@@ -1059,6 +1087,7 @@ private:
     volatile int _diff_nb_split;                // number of subframes per diff
     volatile int _diff_gap;                     // gap when creating diffs.
     volatile int _vsync_spacing;                // update stategy / framerate divider. 
+    volatile double _late_start_ratio;          // late start parameter (by how much we can miss the first sync line and still start the frame without waiting for the next refresh).
 
     DiffBuffBase * volatile  _diff1;             // first diff buffer
     DiffBuffBase * volatile  _diff2;             // second diff buffer (if non null, then _diff1 is also non zero). 

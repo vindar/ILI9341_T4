@@ -40,6 +40,7 @@ namespace ILI9341_T4
         _refreshmode = 0; 
 
         // buffering
+        _late_start_ratio = ILI9341_T4_DEFAULT_LATE_START_RATIO;
         _diff_nb_split = ILI9341_T4_DEFAULT_DIFF_SPLIT;
         _diff_gap = ILI9341_T4_DEFAULT_DIFF_GAP;
         _vsync_spacing = ILI9341_T4_DEFAULT_VSYNC_SPACING;
@@ -728,10 +729,14 @@ namespace ILI9341_T4
             double start, end;
             diff->subFrameSyncTimes(start, end);
             int starti = _ratioToScanline(start);
-            int endi = _ratioToScanline(end);
-            uint32_t t = _microToReachScanLine(endi, true);                         // we want scanline at endi when we start drawing the frame. resync.
-            delayMicroseconds(t);                                                   // wait...
-            while ((t = _microToExitRange(0, endi))) { delayMicroseconds(t); }     // make sure we are good (in case delayMicroseconds() in not precise enough).
+            int endi = _ratioToScanline(end);                                                  // scanline position where we want to start the upload
+            int endi2 = (int)((ILI9341_T4_NB_SCANLINE - 1 - endi) * _late_start_ratio + endi); // but after this position, we will wait for the next frame
+            uint32_t t2 = _microToReachScanLine(endi2, true);                                  // how to get there ?  resync at the same time while spi is inactive        
+            uint32_t t = _microToReachScanLine(endi, false);                                   // and there ? 
+            if (t2 < t) t = 0;                                                                 // we are in [endi endi2] so we start now                   
+            if (t > 0) delayMicroseconds(t);                                                   // wait if needed
+            while ((t = _microToExitRange(0, endi))) { delayMicroseconds(t); }                 // make sure we are good (in case delayMicroseconds() in not precise enough).
+
             // ok, scanline is just after endi.  
             _nbdrawnstart = starti;             // number of line at beggining of subframe
             _slinitpos = _getScanLine(false);   // save initial scanline position
@@ -963,12 +968,14 @@ namespace ILI9341_T4
         {
         // we should be around scanline 0 (unless we are late). 
         _restartframe();
-        _getScanLine(true); // force resync while spi in not active.                     
         double start, end;
         _diff->subFrameSyncTimes(start, end);
-        int endi = _ratioToScanline(end);        
-        uint32_t t = _microToReachScanLine(endi, false);        // we want scanline at endi when we start drawing the frame.
-        _setTimerIn(t, &ILI9341Driver::_subFrameTimerStartcb2); // call when ready to start transfer.        
+        int endi = _ratioToScanline(end);                                                  // scanline position where we want to start the upload
+        int endi2 = (int)((ILI9341_T4_NB_SCANLINE - 1 - endi) * _late_start_ratio + endi); // but after this position, we will wait for the next frame
+        uint32_t t2 = _microToReachScanLine(endi2, true);                                  // how to get there ?  resync at the same time while spi is inactive        
+        uint32_t t = _microToReachScanLine(endi, false);                                   // and there ? 
+        if (t2 < t) t = 0;                                                                 // we are in [endi endi2] so we start now                   
+        _setTimerIn(t, &ILI9341Driver::_subFrameTimerStartcb2);                            // call when ready to start transfer.        
         _pauseframe();
         return;
         }
