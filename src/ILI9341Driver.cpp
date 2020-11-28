@@ -1127,6 +1127,7 @@ namespace ILI9341_T4
         _dmatx.clearComplete();
         if (_partdma == 5)
             {
+            _nbt++; // count a spi transaction
             _subFrameInterruptDiff();
             return;
             }
@@ -1157,6 +1158,7 @@ namespace ILI9341_T4
         _dmatx.clearInterrupt();
         _dmatx.clearComplete(); // done with DMA
         _restartframe();
+        _nbt++; // count s spi transaction.
         if (_boff == ILI9341_T4_NB_PIXELS)
             { // done !            
             while (_pimxrt_spi->FSR & 0x1f);        // wait for transmit fifo to be empty
@@ -1314,7 +1316,11 @@ namespace ILI9341_T4
         _min_cputime = -1;
         _max_cputime = 0;
         _sum_cputime = 0;
-        _sumsqr_cputime = 0;
+        _sumsqr_cputime = 0;        
+        _min_transactions = -1;
+        _max_transactions = 0;
+        _sum_transactions = 0;
+        _sumsqr_transactions = 0;
         _nbteared = 0;
         _vsync_spacing_nb = 0;
         _min_vsync_spacing = -1;
@@ -1364,6 +1370,7 @@ namespace ILI9341_T4
         outputStream->printf("Statistics.\n");
         outputStream->printf("- average framerate  : %.2fHz  (%u frames in %ums)\n", statsFramerate(), statsNbFrame(), statsTime());
         outputStream->printf("- cpu time per frame : avg=%uus  [min=%uus , max=%uus], std=%uus\n", statsAvgCpuTime(), statsMinCpuTime(), statsMaxCpuTime(), statsStdCpuTime());
+        outputStream->printf("- transactions/frame : avg=%u  [min=%u , max=%u], std=%uus\n", statsAvgTransactions(), statsMinTransactions(), statsMaxTransactions(), statsStdTransactions());
         outputStream->printf("- nb unsynced frames : %u\n", statsNbFrame() - statsNbFrameWithVSync());
         outputStream->printf("- nb synced frames   : %u \n", statsNbFrameWithVSync());
         outputStream->printf("- nb teared frames   : %u (%.2f%%)\n", statsNbTeared(), statsRatioTeared() * 100);
@@ -1384,6 +1391,12 @@ namespace ILI9341_T4
         if (_max_cputime < _cputime) _max_cputime = _cputime;
         _sum_cputime += _cputime;
         _sumsqr_cputime += _cputime * _cputime;
+
+        if (_min_transactions > _nbt) _min_transactions = _nbt;
+        if (_max_transactions < _nbt) _max_transactions = _nbt;
+        _sum_transactions += _nbt;
+        _sumsqr_transactions += _nbt * _nbt;
+
         _cputime = 0;
         if (_vsyncon)
             {

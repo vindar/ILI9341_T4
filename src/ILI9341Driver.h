@@ -466,7 +466,7 @@ public:
     void setDiffGap(int gap = ILI9341_T4_DEFAULT_DIFF_GAP)
         {
         waitUpdateAsyncComplete();
-        _diff_gap = _clip(gap,1,100);
+        _diff_gap = _clip(gap,1,ILI9341_T4_NB_PIXELS);
         statsReset();
         }
 
@@ -910,6 +910,52 @@ public:
         const double b = 4*((double)_sumsqr_margin);
         return (int32_t)round(sqrt((b / (_vsync_spacing_nb)) - ((a * a) / ((_vsync_spacing_nb) * (_vsync_spacing_nb)))));
         }
+
+
+
+    /**
+    * Minimum number of SPI transactions used to display a frame
+    **/
+    int32_t statsMinTransactions() const { return _min_transactions; }
+
+
+    /**
+    * Maximum number of SPI transactions used to display a frame
+    **/
+    int32_t statsMaxTransactions() const { return _max_transactions; }
+
+
+
+    /**
+    * Average number of SPI transactions used to display a frame
+    **/
+    int32_t statsAvgTransactions() const { return  (_nbframe == 0) ? 0 : ((uint32_t)round(((double)_sum_transactions) / _nbframe)); }
+
+
+
+    /**
+    * Std on the average number of SPI transactions used to display a frame
+    **/
+    int32_t statsStdTransactions() const
+        {
+        if (_nbframe == 0) return 0;
+        const double a = ((double)_sum_transactions);
+        const double b = ((double)_sumsqr_transactions);
+        const double c = sqrt((b / _nbframe) - ((a * a) / (_nbframe * _nbframe)));
+        return (uint32_t)round(c);
+        }
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1439,8 +1485,18 @@ private:
         int64_t _sum_margin;           // sum of margins
         int64_t _sumsqr_margin;        // sum of the square of the margin
 
+
+
+        uint32_t _nbt;                  // number of spi transaction for the frame
+        uint32_t _min_transactions;     // minimum number of spi transaction for a frame
+        uint32_t _max_transactions;     // maximum number of spi transaction for a frame
+        uint64_t _sum_transactions;     // sum of the number of spi transaction for a frame
+        uint64_t _sumsqr_transactions;  // sum of the square of the number of spi transaction for a frame
+        
+
         void _startframe(bool vsynonc)
             {
+            _nbt = 0;
             _cputime = 0;;
             _vsyncon = vsynonc;
             _emframe = 0; 
