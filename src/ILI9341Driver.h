@@ -72,7 +72,7 @@ namespace ILI9341_T4
 
 #define ILI9341_T4_MAX_VSYNC_SPACING 10             // max number of screen refresh between frames 
 #define ILI9341_T4_FAST_UNSAFE_DMA 1                // enable possibly unsafe optimizations. 
-#define ILI9341_T4_IRQ_PRIORITY 96                  // priority at which we run the irqs (dma and pit timer). Should be set low enough when using unsafe op  
+#define ILI9341_T4_IRQ_PRIORITY 16                  // priority at which we run the irqs (dma and pit timer). Setting it very low for the time being...
 #define ILI9341_T4_MAX_DELAY_MICROSECONDS 1000000   // maximum waiting time (1 second)
 
 #define ILI9341_T4_TOUCH_Z_THRESHOLD     400        // for touch
