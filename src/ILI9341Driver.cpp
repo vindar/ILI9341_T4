@@ -709,7 +709,9 @@ namespace ILI9341_T4
         if (fb == nullptr) return false;
         waitUpdateAsyncComplete();
         _startframe(false);
+        _nbt = 1;
         _vsyncok = false;   // no sync so tearing may occur.
+        _nb_upload = ILI9341_T4_NB_PIXELS;
         _beginSPITransaction(_spi_clock);
         _setAddr(0, 0, _width, _height);
         _writecommand_cont(ILI9341_T4_RAMWR);
@@ -776,6 +778,7 @@ namespace ILI9341_T4
             _last_delta = (int)round(((double)(tfs - _timeframestart)) / (_period));
             _timeframestart = tfs;
             }
+        _nb_upload = 0; 
         _beginSPITransaction(_spi_clock);
        while (1)
             {
@@ -818,6 +821,8 @@ namespace ILI9341_T4
                     }
                 case diff->INSTRUCTION:
                     { // upload a bunch of pixels
+                    _nb_upload += len;
+                    _nbt++;
                     _setAddr(x, y, _width + 1, _height + 1);
                     _writecommand_cont(ILI9341_T4_RAMWR);
                     const uint16_t* p = fb + x + (y * stride);
@@ -851,6 +856,7 @@ namespace ILI9341_T4
         _dmasettingFull.interruptAtCompletion();
         _dmasettingFull.disableOnCompletion();
 
+        _nb_upload = ILI9341_T4_NB_PIXELS;
         _beginSPITransaction(_spi_clock);
         _setAddr(0, 0, _width-1, _height-1);
         _writecommand_last(ILI9341_T4_RAMWR);
@@ -967,6 +973,7 @@ namespace ILI9341_T4
         _dmasettingsDiff[5].disableOnCompletion();
 
         _partdma = 0;
+        _nb_upload = len;
 
         _dmatx = _dmasettingsDiff[0];
         _dmatx.triggerAtHardwareEvent(_spi_hardware->tx_dma_channel);
@@ -1048,6 +1055,7 @@ namespace ILI9341_T4
     void ILI9341Driver::_subFrameInterruptDiff()
         {
         _restartframe();
+
     _dmaInterruptDiff_reread:            
         int x = 0, y = 0, len = 0;
         int res = _diff->readDiff(x, y, len);
@@ -1083,9 +1091,9 @@ namespace ILI9341_T4
                 }
             _flush_cache(_fb, 2 * ILI9341_T4_NB_PIXELS);
             _dmaObject[_spi_num] = nullptr;
-            _dma_state = ILI9341_T4_DMA_IDLE;
+            _dma_state = ILI9341_T4_DMA_IDLE;           
             if (_pcb) { (this->*_pcb)(); }
-            _pcb = nullptr; // remove it afterward. 
+            _pcb = nullptr; // remove it afterward.             
             return;
             }
         else if (res == _diff->NEW_SUBFRAME)
@@ -1145,6 +1153,7 @@ namespace ILI9341_T4
         _pimxrt_spi->TCR = _spi_tcr_current; // update the TCR    
         _dmatx.enable();
     #endif
+        _nb_upload += len;
         _pauseframe();
         return;
         }
@@ -1357,7 +1366,11 @@ namespace ILI9341_T4
         _min_transactions = -1;
         _max_transactions = 0;
         _sum_transactions = 0;
-        _sumsqr_transactions = 0;
+        _sumsqr_transactions = 0;        
+        _min_upload = -1;
+        _max_upload = 0;
+        _sum_upload = 0;
+        _sumsqr_upload = 0;
         _nbteared = 0;
         _vsync_spacing_nb = 0;
         _min_vsync_spacing = -1;
@@ -1419,8 +1432,9 @@ namespace ILI9341_T4
             }
         outputStream->printf("\n\nStatistics.\n");
         outputStream->printf("- average framerate  : %.2fHz  (%u frames in %ums)\n", statsFramerate(), statsNbFrame(), statsTime());
-        outputStream->printf("- cpu time per frame : avg=%uus  [min=%uus , max=%uus], std=%uus\n", statsAvgCpuTime(), statsMinCpuTime(), statsMaxCpuTime(), statsStdCpuTime());
-        outputStream->printf("- transactions/frame : avg=%u  [min=%u , max=%u], std=%uus\n", statsAvgTransactions(), statsMinTransactions(), statsMaxTransactions(), statsStdTransactions());
+        outputStream->printf("- CPU time / frame   : avg=%uus  [min=%uus , max=%uus], std=%uus\n", statsAvgCpuTime(), statsMinCpuTime(), statsMaxCpuTime(), statsStdCpuTime());        
+        outputStream->printf("- pixels/frame       : avg=%u (%u%%) [min=%u , max=%u], std=%u\n", statsAvgPixelsUploaded(), (int)round((statsAvgPixelsUploaded()*100)/ ILI9341_T4_NB_PIXELS), statsMinPixelsUploaded(), statsMaxPixelsUploaded(), statsStdPixelsUploaded());
+        outputStream->printf("- transactions/frame : avg=%u  [min=%u , max=%u], std=%u\n", statsAvgTransactions(), statsMinTransactions(), statsMaxTransactions(), statsStdTransactions());
         outputStream->printf("- nb unsynced frames : %u\n", statsNbFrame() - statsNbFrameWithVSync());
         outputStream->printf("- nb synced frames   : %u \n", statsNbFrameWithVSync());
         outputStream->printf("- nb teared frames   : %u (%.2f%%)\n", statsNbTeared(), statsRatioTeared() * 100);
@@ -1431,6 +1445,7 @@ namespace ILI9341_T4
         if ((statsStdVSyncSpacing() > 0.25)&&(statsNbFrameWithVSync() > 1000))
             outputStream->printf("*** FLUCTUATING FRAMERATE ***\ntry increasing the vsync_spacing parameter.\n\n\n", statsAvgVSyncSpacing(), statsMinVSyncSpacing(), statsMaxVSyncSpacing(), statsStdVSyncSpacing());
         }
+
 
 
     void ILI9341Driver::_endframe()
@@ -1446,6 +1461,11 @@ namespace ILI9341_T4
         if (_max_transactions < _nbt) _max_transactions = _nbt;
         _sum_transactions += _nbt;
         _sumsqr_transactions += _nbt * _nbt;
+
+        if (_min_upload > _nb_upload) _min_upload = _nb_upload;
+        if (_max_upload < _nb_upload) _max_upload = _nb_upload;
+        _sum_upload += _nb_upload;
+        _sumsqr_upload += ((uint64_t)_nb_upload) * ((uint64_t)_nb_upload);
 
         _cputime = 0;
         if (_vsyncon)

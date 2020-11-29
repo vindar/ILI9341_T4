@@ -1020,6 +1020,37 @@ public:
         }
 
 
+    /**
+    * Minimum number of pixels upload during a frame upload
+    **/
+    int32_t statsMinPixelsUploaded() const { return _min_upload; }
+
+
+    /**
+    * Maximum number of pixels uploaded during a frame upload
+    **/
+    int32_t statsMaxPixelsUploaded() const { return _max_upload; }
+
+
+
+    /**
+    * Average number of pixels upload during a frame upload
+    **/
+    int32_t statsAvgPixelsUploaded() const { return  (_nbframe == 0) ? 0 : ((uint32_t)round(((double)_sum_upload) / _nbframe)); }
+
+
+
+    /**
+    * Std on the average number of pixels uploaded during a frame upload
+    **/
+    int32_t statsStdPixelsUploaded() const
+    {
+        if (_nbframe == 0) return 0;
+        const double a = ((double)_sum_upload);
+        const double b = ((_sumsqr_upload >> 32)*4294967296.0) + (_sumsqr_upload & 0xFFFFFFFF); // BUG: converting directly from uint64 to double fails somehow... .
+        const double c = sqrt((b / _nbframe) - ((a * a) / (_nbframe * _nbframe)));        
+        return (uint32_t)round(c);
+    }
 
 
 
@@ -1560,14 +1591,19 @@ private:
         int64_t _sum_margin;           // sum of margins
         int64_t _sumsqr_margin;        // sum of the square of the margin
 
-
-
         uint32_t _nbt;                  // number of spi transaction for the frame
         uint32_t _min_transactions;     // minimum number of spi transaction for a frame
         uint32_t _max_transactions;     // maximum number of spi transaction for a frame
         uint64_t _sum_transactions;     // sum of the number of spi transaction for a frame
         uint64_t _sumsqr_transactions;  // sum of the square of the number of spi transaction for a frame
         
+
+        uint32_t _nb_upload;            // number of pixel updload during a frame. 
+        uint32_t _min_upload;           // minimum number of pixels uploaded in a frame
+        uint32_t _max_upload;           // maximum number of pixels uploaded in a frame
+        uint64_t _sum_upload;           // sum of the number of pixels uploaded
+        uint64_t _sumsqr_upload;        // sum of the square of the number of pixels uploaded
+
 
         void _startframe(bool vsynonc)
             {
