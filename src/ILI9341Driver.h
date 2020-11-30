@@ -32,6 +32,7 @@
 
 #pragma once
 
+#include "StatsVar.h"
 #include "DiffBuff.h"
 
 #include <Arduino.h>
@@ -48,7 +49,6 @@
 
 namespace ILI9341_T4
 {
-
 
 
 
@@ -72,7 +72,7 @@ namespace ILI9341_T4
 
 #define ILI9341_T4_MAX_VSYNC_SPACING 10             // max number of screen refresh between frames 
 #define ILI9341_T4_FAST_UNSAFE_DMA 1                // enable possibly unsafe optimizations. 
-#define ILI9341_T4_IRQ_PRIORITY 16                  // priority at which we run the irqs (dma and pit timer). Setting it very low for the time being...
+#define ILI9341_T4_IRQ_PRIORITY 128                 // priority at which we run the irqs (dma and pit timer).
 #define ILI9341_T4_MAX_DELAY_MICROSECONDS 1000000   // maximum waiting time (1 second)
 
 #define ILI9341_T4_TOUCH_Z_THRESHOLD     400        // for touch
@@ -138,6 +138,11 @@ namespace ILI9341_T4
 #define ILI9341_T4_GMCTRP1 0xE0
 #define ILI9341_T4_GMCTRN1 0xE1
 #define ILI9341_T4_PWCTR6  0xFC
+
+
+
+
+
 
 
 
@@ -666,6 +671,10 @@ public:
     * Push a framebuffer to be displayed on the screen. The behaviour of the method depend on the 
     * current buffering mode and the vsync_spacing parameter. 
     * 
+    * If force_full_redraw = true, then the whole screen updated even if a diff could have been used. 
+    * Normally, this option should not be needed except in the case you know for sure that the diff
+    * will be useless. 
+    * 
     * When the method returns, the framebuffer may (or not) already be displayed on the screen yet
     * it can be reused immediately in any case. 
     * 
@@ -733,8 +742,7 @@ public:
     *     
     * ADVICE: Use double buffering with two diff buffers (with size ranging from 5K to 10K). 
     **/
-    void update(const uint16_t* fb);
-
+    void update(const uint16_t* fb, bool force_full_redraw = false);
 
 
     /**
@@ -752,40 +760,6 @@ public:
     * Return true if an Async update is currently ongoing and false otherwise.
     **/
     inline bool asyncUpdateActive() const { return (_dma_state != ILI9341_T4_DMA_IDLE); }
-
-
-    /**
-    * Return the number of screen refresh that occured between the last two frames drawn.
-    * The return value only has meaning when the last 2 frames were drawn with vsync and
-    * no frame is currently being drawn.
-    *
-    * NOTE: This method is deprecated. It is better to call one of the statsXXX() method 
-    *       to check if things are ok and framerate is stable.
-    **/
-    inline int lastVSyncSpacing() const { return (int)_last_delta; }
-
-
-    /**
-    * Return true if screen tearing may have occured when drawing the last frame.
-    * The return value is undefined if a frame is currently being drawn.
-    * 
-    * NOTE: This method is deprecated. It is better to call one of the statsXXX() method 
-    *       to check if things are ok and framerate is stable.
-    **/
-    inline bool screenTearing() const { return (!_vsyncok); }
-
-
-    /**
-    * Calling this method will force a full redraw the next time update() is called. 
-    * 
-    * NOTE: There should be no need to call this method in normal usage as the driver
-    *       keeps track of the screen changes and know when to perform full redraws...
-    **/
-    inline void forceFullRedraw()
-        {
-        waitUpdateAsyncComplete();
-        _mirrorfb = nullptr;
-        }
 
 
 
@@ -807,80 +781,60 @@ public:
     /**
     * Return the number of frames drawn since the last call to statReset().
     **/
-    uint32_t statsNbFrame() const { return _nbframe; }
+    uint32_t statsNbFrames() const { return _stats_nb_frame; }
 
 
     /**
     * Return the number of milliseconds since the last call to statReset().
     **/
-    uint32_t statsTime() const { return _tottime; }
+    uint32_t statsTotalTime() const { return _stats_elapsed_total; }
 
 
     /**
     * Return the average framerate in Hz which is simply the number of 
     * frame drawn divided the total time. 
     **/
-    double statsFramerate() const
-        {
-        return  (_nbframe == 0) ? 0.0 : ((_nbframe * 1000.0) / _tottime);
-        }
+    double statsFramerate() const { return  (_stats_nb_frame == 0) ? 0.0 : ((_stats_nb_frame * 1000.0) / _stats_elapsed_total); }
 
 
     /**
-    * Return the minimum CPU time (in us) used for drawing a frame.
-    * This is the time spend preparing the update/updating the screen
-    * but it does not count the time during DMA/waiting for vsync.  
+    * Return an object containing statistics about the CPU time
+    * used spend preparing and updating the screen (dma interrupt time). 
+    * !!! This does NOT count the time needed to create the diffs. !!!
+    **/
+    StatsVar statsCPUtimePerFrame() const { return _statsvar_cputime; }
+
+
+    /**
+    * Return an object containing statistics about the number of pixels
+    * uploaded per frame. 
+    **/
+    StatsVar statsPixelsPerFrame() const { return _statsvar_uploaded_pixels; }
+
+
+    /**
+    * Return an object containing statistics about the number of transactions
+    * per frame.
+    **/
+    StatsVar statsTransactionsPerFrame() const { return _statsvar_transactions; }
+
+
+    /**
+    * Return an object containing statistics about the "margin" during upload a vsynced frame.
     * 
-    * It also does not count the time spent creating the diffs:
-    * call the statsXXX() method of the diffs directly for this.
-    **/
-    uint32_t statsMinCpuTime() const { return _min_cputime; }
-
-
-    /**
-    * Return the maximum CPU time (in us) used for drawing a frame.
-    * This is the time spend preparing the update/updating the screen
-    * but it does not count the time during DMA/waiting for vsync.
+    * The margin of a vsynced uploaded frame is minimum difference during the upload between 
+    * the position of the pixels being uploaded and the screen scanline currently beign refreshed.
     *
-    * It also does not count the time spent creating the diffs:
-    * call the statsXXX() method of the diffs directly for this.
+    * When this value becomes negative, it means tearing occurs. A large positive value means that 
+    * there is plenty of time for redraw without tearing so the framerate may be increased.
     **/
-    uint32_t statsMaxCpuTime() const { return _max_cputime; }
+    StatsVar statsMarginPerFrame() const { return _statsvar_margin; }
 
 
     /**
-    * Return the average CPU time (in us) used for drawing a frame.
-    * This is the time spend preparing the update/updating the screen
-    * but it does not count the time during DMA/waiting for vsync.
-    *
-    * It also does not count the time spent creating the diffs:
-    * call the statsXXX() method of the diffs directly for this.
+    * Return an object containing the effective statistics about the vsync_spacing beween screen refresh. 
     **/
-    uint32_t statsAvgCpuTime() const { return  (_nbframe == 0) ? 0 : ((uint32_t)round(((double)_sum_cputime) / _nbframe)); }
-
-
-    /**
-    * Return the std on the CPU time (in us) used for drawing a frame.
-    * This is the time spend preparing the update/updating the screen
-    * but it does not count the time during DMA/waiting for vsync.
-    *
-    * It also does not count the time spent creating the diffs:
-    * call the statsXXX() method of the diffs directly for this.
-    **/
-    uint32_t statsStdCpuTime() const
-        {
-        if (_nbframe == 0) return 0;
-        const double a = ((double)_sum_cputime);
-        const double b = ((double)_sumsqr_cputime);
-        const double c = sqrt((b / _nbframe) - ((a * a) / (_nbframe * _nbframe)));
-        return (uint32_t)round(c);
-        }
-
-
-    /**
-    * Return the number of frames drawn with vsync active
-    **/
-    uint32_t statsNbFrameWithVSync() const { return _vsync_spacing_nb; }
+    StatsVar statsRealVSyncSpacing() const { return _statsvar_vsyncspacing; }
 
 
     /**
@@ -893,181 +847,15 @@ public:
     /**
     * Return the ratio of frame with vsync active for which screen tearing
     * may have occured.
+    * (returns 1.0 when vsync is OFF).  
     **/
-    double statsRatioTeared() const { return  (_vsync_spacing_nb == 0) ? 0 : ((double)_nbteared) / _vsync_spacing_nb; }
-
-
-    /**
-    * Return the minimum number of screen refresh between two frames updates
-    * (only counting vsynced frames).
-    **/
-    uint32_t statsMinVSyncSpacing() const { return _min_vsync_spacing; }
-
-
-    /**
-    * Return the maximum number of screen refresh between two frame updates
-    * (only counting vsynced frames).
-    **/
-    uint32_t statsMaxVSyncSpacing() const { return  _max_vsync_spacing; }
-
-
-    /**
-    * Return the average number of screen refresh between two frame updates
-    * (only counting vsynced frames).
-    **/
-    double statsAvgVSyncSpacing() const { return  (_vsync_spacing_nb <= 1) ? 0 : ((double)_vsync_spacing_sum) / (_vsync_spacing_nb-1); }
-
-
-    /**
-     * Return the std on the number of screen refresh between two frame updates
-     * (only counting vsynced frames).
-     **/
-    double statsStdVSyncSpacing() const
-        {
-        if (_vsync_spacing_nb <= 1) return 0.0;
-        const double a = ((double)_vsync_spacing_sum);
-        const double b = ((double)_vsync_spacing_sqr);
-        return sqrt((b / (_vsync_spacing_nb-1)) - ((a * a) / ((_vsync_spacing_nb-1) * (_vsync_spacing_nb-1))));
-        }
-
-
-    /**
-    * Return the minimum margin recorded for all synced frames since the last StatsReset().
-    * 
-    * The margin is minimum difference during a redraw between the position of the pixels being
-    * uploaded and the screen scanline currently beign refreshed.
-    * 
-    * When this value becomes negative, tearing occurs. A large positive value means that there 
-    * is plenty of time for redraw wihtout tearing and framerate may be increased.
-    **/
-    int32_t statsMinMargin() const { return 2 * _min_margin; }
-
-
-    /**
-    * Return the maximum margin recorded for all synced frames since the last StatsReset().
-    *
-    * The margin is minimum difference during a redraw between the position of the pixels being
-    * uploaded and the screen scanline currently beign refreshed.
-    *
-    * When this value becomes negative, tearing occurs. A large positive value means that there
-    * is plenty of time for redraw wihtout tearing and framerate may be increased.
-    **/
-    int32_t statsMaxMargin() const { return 2 * _max_margin; }
-
-
-    /**
-    * Return the average margin recorded for all synced frames since the last StatsReset().
-    *
-    * The margin is minimum difference during a redraw between the position of the pixels being
-    * uploaded and the screen scanline currently beign refreshed.
-    *
-    * When this value becomes negative, tearing occurs. A large positive value means that there
-    * is plenty of time for redraw wihtout tearing and framerate may be increased.
-    **/
-    int32_t statsAvgMargin() const { return  (_vsync_spacing_nb == 0) ? 0 : ((2 * _sum_margin) / _vsync_spacing_nb); }
-
-
-
-    /**
-    * Return the std one the average margin recorded for all synced frames since the last StatsReset().
-    *
-    * The margin is minimum difference during a redraw between the position of the pixels being
-    * uploaded and the screen scanline currently beign refreshed.
-    *
-    * When this value becomes negative, tearing occurs. A large positive value means that there
-    * is plenty of time for redraw wihtout tearing and framerate may be increased.
-    **/
-    int32_t statsStdMargin() const
-        {
-        if (_vsync_spacing_nb <= 0) return 0.0;
-        const double a = 2*((double)_sum_margin);
-        const double b = 4*((double)_sumsqr_margin);
-        return (int32_t)round(sqrt((b / (_vsync_spacing_nb)) - ((a * a) / ((_vsync_spacing_nb) * (_vsync_spacing_nb)))));
-        }
-
-
-
-    /**
-    * Minimum number of SPI transactions used to display a frame
-    **/
-    int32_t statsMinTransactions() const { return _min_transactions; }
-
-
-    /**
-    * Maximum number of SPI transactions used to display a frame
-    **/
-    int32_t statsMaxTransactions() const { return _max_transactions; }
-
-
-
-    /**
-    * Average number of SPI transactions used to display a frame
-    **/
-    int32_t statsAvgTransactions() const { return  (_nbframe == 0) ? 0 : ((uint32_t)round(((double)_sum_transactions) / _nbframe)); }
-
-
-
-    /**
-    * Std on the average number of SPI transactions used to display a frame
-    **/
-    int32_t statsStdTransactions() const
-        {
-        if (_nbframe == 0) return 0;
-        const double a = ((double)_sum_transactions);
-        const double b = ((double)_sumsqr_transactions);
-        const double c = sqrt((b / _nbframe) - ((a * a) / (_nbframe * _nbframe)));
-        return (uint32_t)round(c);
-        }
-
-
-    /**
-    * Minimum number of pixels upload during a frame upload
-    **/
-    int32_t statsMinPixelsUploaded() const { return _min_upload; }
-
-
-    /**
-    * Maximum number of pixels uploaded during a frame upload
-    **/
-    int32_t statsMaxPixelsUploaded() const { return _max_upload; }
-
-
-
-    /**
-    * Average number of pixels upload during a frame upload
-    **/
-    int32_t statsAvgPixelsUploaded() const { return  (_nbframe == 0) ? 0 : ((uint32_t)round(((double)_sum_upload) / _nbframe)); }
-
-
-
-    /**
-    * Std on the average number of pixels uploaded during a frame upload
-    **/
-    int32_t statsStdPixelsUploaded() const
-    {
-        if (_nbframe == 0) return 0;
-        const double a = ((double)_sum_upload);
-        const double b = ((_sumsqr_upload >> 32)*4294967296.0) + (_sumsqr_upload & 0xFFFFFFFF); // BUG: converting directly from uint64 to double fails somehow... .
-        const double c = sqrt((b / _nbframe) - ((a * a) / (_nbframe * _nbframe)));        
-        return (uint32_t)round(c);
-    }
-
-
-
-
-
-
-
-
-
-
-
+    double statsRatioTeared() const { return (_vsync_spacing <= 0) ? 1.0 : ((_statsvar_vsyncspacing.count() == 0) ? 0.0 : (((double)_nbteared) / _statsvar_margin.count())); }
 
 
     /**
     * Output statistics about the object into a stream.
     * 
-    * Useful for fine-tuning.
+    * Useful for fine-tuning the parameters.
     **/
     void printStats(Stream* outputStream = &Serial) const;
 
@@ -1186,29 +974,12 @@ private:
 
 
     /**
-    * Update the whole screen with a given framebuffer.
-    * - return only when update completed.
-    * - no vsync.
-    **/
-    bool _updateNow(const uint16_t* fb);
-
-
-    /**
     * Update part of the screen using a diff buffer object representing the changes between
     * the old framebuffer and the new one 'fb'.
     * - return only when update completed.
     * - uses the _vsync_spacing parameter to choose the vsync stategy.
     **/
-    bool _updateNow(const uint16_t* fb, DiffBuffBase* diff);
-
-
-
-    /**
-    * Update the whole screen with a given framebuffer.
-    * - return asap and update is async via DMA.
-    * - no vsync
-    **/
-    void _updateAsync(const uint16_t* fb);
+    void _updateNow(const uint16_t* fb, DiffBuffBase* diff);
 
 
     /**
@@ -1234,7 +1005,7 @@ private:
     void _copyfb(uint16_t * fb_dst, const uint16_t * fb_src)
         {
         memcpy(fb_dst, fb_src, ILI9341_T4_NB_PIXELS*2); 
-        /*
+        return;
         if (((((size_t)fb_dst) & 3) == 0) && ((((size_t)fb_src) & 3) == 0))
             { // use fast aligned copy
             uint32_t* f1 = (uint32_t*)fb_dst;
@@ -1250,7 +1021,7 @@ private:
             { // falls back to slow copy. 
             for (int i = 0; i < ILI9341_T4_NB_PIXELS; i++) fb_dst[i] = fb_src[i];                
             }
-        */
+       
         }
 
 
@@ -1390,20 +1161,15 @@ private:
 
     const uint16_t* volatile _fb;               // the framebuffer to push
 
-    volatile int _boff;                         // current offset in _newfb
-
     DiffBuffBase* volatile _diff;               // and corresponding diff buffer
 
     volatile int _stride;                       // stride for the diff buffer (should be equal to _width).
 
-    elapsedMicros _em_async;                    // timer for async drawing  
+    elapsedMicros _em_async;                    // timer for async drawing
     volatile uint32_t _nbdrawnstart;            // remember begining of (previous) subframe. 
     volatile uint32_t _slinitpos;               // initial scanline position
-    volatile int32_t _margin;                       // margin between scanline and redraw line. 
-
-    volatile bool _vsyncok;                     // false if screen tearing may have occured during last redraw. 
-    volatile uint32_t _last_delta;                  // number of refresh that occured beetween the previous two frames. 
-
+    volatile int32_t _margin;                   // margin between scanline and redraw line. 
+    volatile uint32_t _last_delta;              // number of refresh that occured beetween the previous two frames. 
 
     static ILI9341Driver * volatile _dmaObject[3];  // points back to this-> (for the corresponding spi bus)
 
@@ -1417,21 +1183,21 @@ private:
 
     DMAChannel _dmatx;                          // the dma channel object. 
 
-    DMASetting          _dmasettingFull;        // single dma setting for full redraw. 
-    DMASetting          _dmasettingsDiff[6];    // dma settings chain for diff redraw.
+    DMASetting          _dmasettingsDiff[6];    // dma settings chain
 
-    uint8_t             _comAsync[3];           // CASET PASET and RAMWR commands
-    uint16_t            _comAsyncX[2];          // x range
-    uint16_t            _comAsyncY[2];          // y range
+    uint8_t             _comCommand0;           // the commands for DMASettings 0
+    uint8_t             _comCommand2;           // the commands for DMASettings 2
+    uint8_t             _comCommand4;           // the commands for DMASettings 4
+
+    uint16_t            _comData1;              // the data for DMASetting 1
+    uint16_t            _comData3;              // the data for DMASetting 3
+
+    int                 _prev_caset_x;          // previous position set with the caset command
+    int                 _prev_paset_y;          // previous position set with the paset command
+
     volatile int        _partdma = 0;           // which dmasettingsDiff is currently loaded in _dmatx
 
-
-    static void _dmaInterruptSPI0Full() { if (_dmaObject[0]) { _dmaObject[0]->_dmaInterruptFull(); } } // called when using spi 0
-    static void _dmaInterruptSPI1Full() { if (_dmaObject[1]) { _dmaObject[1]->_dmaInterruptFull(); } } // called when using spi 1
-    static void _dmaInterruptSPI2Full() { if (_dmaObject[2]) { _dmaObject[2]->_dmaInterruptFull(); } } // called when using spi 2
-
-    void _dmaInterruptFull(); // called when doing full redraw
-
+ 
     static void _dmaInterruptSPI0Diff() { if (_dmaObject[0]) { _dmaObject[0]->_dmaInterruptDiff(); } } // called when using spi 0
     static void _dmaInterruptSPI1Diff() { if (_dmaObject[1]) { _dmaObject[1]->_dmaInterruptDiff(); } } // called when using spi 1
     static void _dmaInterruptSPI2Diff() { if (_dmaObject[2]) { _dmaObject[2]->_dmaInterruptDiff(); } } // called when using spi 2
@@ -1443,7 +1209,10 @@ private:
     void _setCB(methodCB_t pcb = nullptr) { _pcb = pcb; }
 
 
-    /** flush the cache if the array is located in DMAMEM. */
+    /** 
+     * flush the cache if the array is located in DMAMEM.
+     * This can take a while (100us) so don't abuse it !
+     **/
     void _flush_cache(const void* ptr, size_t len) __attribute__((always_inline))
         {
         if ((uint32_t)ptr >= 0x20200000u) arm_dcache_flush((void*)ptr, len);
@@ -1456,6 +1225,8 @@ private:
     void _subFrameTimerStartcb2();   // called at start of subframe
 
     void _subFrameInterruptDiff();   // called by _dmaInterruptDiff() and by timer when changing subframe.
+
+    void _subFrameInterruptDiff2();  // called by after a pause for synchronization
 
 
  
@@ -1477,11 +1248,6 @@ private:
     static void _pitcb3() { if (_pitObj[3]) { _pitObj[3]->_it.end(); _pitObj[3]->_istimer = false; ((_pitObj[3])->*(_pitObj[3]->_pitcb))(); } }  // forward to the timer method cb
 
     volatile methodCB_t _pitcb;        // timer callback method. 
-
-    volatile callback_t _pitcbd;    // timer callback static function (for derived class)
-    void* volatile _pitcbd_state;   // and its state
-
-    void _pitcb_derived() { if (_pitcbd) _pitcbd(_pitcbd_state); }  // forward to the static method in the derived class. 
 
 
     /** call at startup to initialize the timer */
@@ -1531,98 +1297,68 @@ private:
         }
 
 
-    protected:
-
-    /**********************************************************
-    Timer can also be set in derived class for chaining updates. 
-    ***********************************************************/
-
-    /** Set the timer to ring in us microseconds. */
-    void _setTimerIn(uint32_t us, callback_t timercb, void * cbstate) __attribute__((always_inline))
-        {
-        _pitcbd = timercb;
-        _pitcbd_state = cbstate;
-        if (timercb) _setTimerIn(us, &ILI9341Driver::_pitcb_derived);
-        }
-
-
-    /** Set the timer to ring when micros() reaches ustime */
-    void _setTimerAt(uint32_t ustime, callback_t timercb, void* cbstate) __attribute__((always_inline))
-        {
-        _pitcbd = timercb;
-        _pitcbd_state = cbstate;
-        if (timercb) _setTimerAt(ustime, &ILI9341Driver::_pitcb_derived);
-        }
-
-
-
-    private:
-
 
    /**********************************************************************************************************
    * About Stats
    ***********************************************************************************************************/
 
 
+        uint32_t        _stats_nb_frame;            // number of frame drawn since last reset. 
+        elapsedMillis   _stats_elapsed_total;       // total time since the last reset. 
 
-        uint32_t _nbframe;              // number of frame drawn since last reset. 
-        elapsedMillis _tottime;         // total time since the last reset. 
+        elapsedMicros   _stats_elapsed_cputime;     // timer for the cpu time use during a frame
+        uint32_t        _stats_cputime;             // cpu time spend in a frame
+        StatsVar        _statsvar_cputime;          // statistics about the cpu time usage. 
 
-        elapsedMicros _emframe;         // timer for a single frame
-        uint32_t _cputime;              // cpu time spend in a frame
+        elapsedMicros   _stats_elapsed_uploadtime;  // timer for the dma time single frame
+        uint32_t        _stats_uploadtime;          // cpu time spend in a frame
+        StatsVar        _statsvar_uploadtime;       // statistics about the cpu time usage. 
 
-        uint32_t _min_cputime;          // minimum cpu time used for a frame.
-        uint32_t _max_cputime;          // maximum cpu time use for a frame
-        uint64_t _sum_cputime;          // sum of the cpu times (for average)
-        uint64_t _sumsqr_cputime;       // sum of the square (for std).
+        uint32_t        _stats_nb_uploaded_pixels;  // number of pixel upload during a frame. 
+        StatsVar        _statsvar_uploaded_pixels;  // statistics about the number of pixels uploaded per frame.
 
-        uint32_t _nbteared;             // number of frame for which screen tearing may have occured. 
+        uint32_t        _stats_nb_transactions;     // number of transactions for the frame.
+        StatsVar        _statsvar_transactions;     // statistics about the number of transactions per frame.
 
-        uint32_t _vsync_spacing_nb;     // number of 'vsynced' frame drawn
-        uint32_t _min_vsync_spacing;    // min spacing
-        uint32_t _max_vsync_spacing;    // max spacing
-        uint64_t _vsync_spacing_sum;    // sum as the spacings. 
-        uint64_t _vsync_spacing_sqr;    // sum of the square of the spacings. 
+        StatsVar        _statsvar_margin;           // statistics about the 'margin' per frame
 
-        bool _vsyncon;                  // true if the current frame uses vsync. 
+        StatsVar        _statsvar_vsyncspacing;     // statistics about the effective vsync_spacing
 
-        int32_t _min_margin;           // min margin between running scanline and running drawn line.
-        int32_t _max_margin;           // max margin between running scanline and running drawn line.
-        int64_t _sum_margin;           // sum of margins
-        int64_t _sumsqr_margin;        // sum of the square of the margin
+        uint32_t        _nbteared;                  // number of frame for which screen tearing may have occured. 
 
-        uint32_t _nbt;                  // number of spi transaction for the frame
-        uint32_t _min_transactions;     // minimum number of spi transaction for a frame
-        uint32_t _max_transactions;     // maximum number of spi transaction for a frame
-        uint64_t _sum_transactions;     // sum of the number of spi transaction for a frame
-        uint64_t _sumsqr_transactions;  // sum of the square of the number of spi transaction for a frame
-        
-
-        uint32_t _nb_upload;            // number of pixel updload during a frame. 
-        uint32_t _min_upload;           // minimum number of pixels uploaded in a frame
-        uint32_t _max_upload;           // maximum number of pixels uploaded in a frame
-        uint64_t _sum_upload;           // sum of the number of pixels uploaded
-        uint64_t _sumsqr_upload;        // sum of the square of the number of pixels uploaded
-
-
+    
         void _startframe(bool vsynonc)
             {
-            _nbt = 0;
-            _cputime = 0;;
-            _vsyncon = vsynonc;
-            _emframe = 0; 
+            _stats_nb_uploaded_pixels = 0; 
+            _stats_nb_transactions = 0;
+            _stats_cputime = 0;;           
+            _stats_elapsed_cputime = 0; 
+            _stats_uploadtime = 0; 
+            _stats_elapsed_uploadtime = 0;
             }
 
 
-        void _restartframe() __attribute__((always_inline))
+        void _restartCpuTime() __attribute__((always_inline))
             {
-            _emframe = 0;
+            _stats_elapsed_cputime = 0;
             }
 
 
-        void _pauseframe() __attribute__((always_inline))
+        void _pauseCpuTime() __attribute__((always_inline))
             {
-            _cputime += _emframe;
+            _stats_cputime += _stats_elapsed_cputime;
+            }
+
+
+        void _restartUploadTime() __attribute__((always_inline))
+            {
+            _stats_elapsed_uploadtime = 0;
+            }
+
+
+        void _pauseUploadTime() __attribute__((always_inline))
+            {
+            _stats_uploadtime += _stats_elapsed_uploadtime;
             }
 
 
@@ -1659,18 +1395,6 @@ private:
     uint32_t _tcr_dc_not_assert;                // mask for the TCR register when DC is not asserted (high)
 
     uint8_t _pending_rx_count;                  // hack ...
-
-
-
-    void _setAddr(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) __attribute__((always_inline))
-        {
-        _writecommand_cont(ILI9341_T4_CASET); // Column addr set
-        _writedata16_cont(x0);             // XSTART
-        _writedata16_cont(x1);             // XEND
-        _writecommand_cont(ILI9341_T4_PASET); // Row addr set
-        _writedata16_cont(y0);             // YSTART
-        _writedata16_cont(y1);             // YEND
-        }
 
 
     void _beginSPITransaction(uint32_t clock) __attribute__((always_inline))

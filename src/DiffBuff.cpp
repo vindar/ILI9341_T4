@@ -112,22 +112,12 @@ namespace ILI9341_T4
                 }
             }
         _write_encoded(TAG_END);
-        // done. record stats
-        _stat_nb++;
-        const uint32_t s = size();
-        if (((int)s) >= _sizebuf) _stat_overflow++;
-        if (s < _stat_min) _stat_min = s;
-        if (s > _stat_max) _stat_max = s;
-        _stat_sum += s;
-        _stat_sumsqr += s * s;
-
-        const uint32_t t = em;
-        if (t < _stat_mintime) _stat_mintime = t;
-        if (t > _stat_maxtime) _stat_maxtime = t;
-        _stat_sumtime += t;
-        _stat_sumsqrtime += t * t;
         initRead();
-        // return buffer size
+
+        // done. record stats
+        _stats_size.push(size());
+        if (((int)size()) >= _sizebuf) _stat_overflow++;
+        _stats_time.push(em);
         return;
         }
 
@@ -383,26 +373,19 @@ namespace ILI9341_T4
 
     void DiffBuff::statsReset()
         {
-        _stat_nb = 0;
         _stat_overflow = 0;
-        _stat_min = -1;
-        _stat_max = 0;
-        _stat_sum = 0;
-        _stat_sumsqr = 0;
-        _stat_mintime = -1;
-        _stat_maxtime = 0;
-        _stat_sumtime = 0;
-        _stat_sumsqrtime = 0;
+        _stats_size.reset();
+        _stats_time.reset();
         }
 
 
     void DiffBuff::printStats(Stream* outputStream) const
         {
-        outputStream->printf("--- DiffBuff Stats ---\n");
-        outputStream->printf("- nb of diff computed: %u overflowed %u (%u%%)\n", statsNb(), statsOverflow(), statsOverflowRatio());
-        outputStream->printf("- buffer size        : %u\n", _sizebuf + PADDING);
-        outputStream->printf("- diff buffer use    : avg=%u [min=%u , max=%u], std=%u\n", statsAvgSize(), statsMinSize(), statsMaxSize(), statsStdSize());
-        outputStream->printf("- computation time   : avg=%uus [min=%uus , max=%uus], std=%uus\n\n", statsAvgTime(), statsMinTime(), statsMaxTime(), statsStdTime());
+        outputStream->printf("------------------- DiffBuff Stats -------------------\n");
+        outputStream->printf("- max. buffer size   : %u\n", _sizebuf + PADDING);
+        outputStream->printf("- overflow ratio     : %.1f%%  (%u out of %u computed)\n", 100*statsOverflowRatio(), statsNbOverflow(), statsNbComputed());
+        outputStream->printf("- buffer size used   : "); _stats_size.print("", "\n", outputStream); 
+        outputStream->printf("- computation time   : "); _stats_time.print("us", "\n\n", outputStream);
         }
 
 

@@ -21,8 +21,9 @@
 
 #pragma once
 
+#include "StatsVar.h"
+
 #include <Arduino.h>
-#include <inttypes.h>
 #include <math.h>
 
 
@@ -258,83 +259,34 @@ namespace ILI9341_T4
 
 
         /**
-        * Return the number of diff created (since the last call to statsReset()). 
+        * Return the number of diff computed (since the last call to statsReset()). 
         **/
-        uint32_t statsNb() const { return _stat_nb; }
+        uint32_t statsNbComputed() const { return _stats_size.count(); }
 
 
         /**
         * Return the number of diff for which the buffer overflowed.
         **/
-        uint32_t statsOverflow() const { return _stat_overflow; }
+        uint32_t statsNbOverflow() const { return _stat_overflow; }
 
 
         /**
-        * Return the percentage of diff that overflowed (between 0 and 100).
+        * Return the percentage of diff that overflowed (between 0 and 1.0).
         **/
-        double statsOverflowRatio() const { return ((_stat_nb > 0) ? ((_stat_overflow * 100.0) / _stat_nb) : 0.0); }
+        double statsOverflowRatio() const { return ((statsNbComputed() > 0) ? (((double)_stat_overflow) / statsNbComputed()) : 0.0); }
 
 
         /**
-        * Return the size of the smallest diff created (in bytes).
+        * Return a StatsVar object containing statisitcs about the time
+        * it took to compute the diffs. 
         **/
-        uint32_t statsMinSize() const { return _stat_min; }
-
+        StatsVar statsTime() const { return _stats_time;  }
 
         /**
-        * Return the size of the largest diff created (in bytes).
+        * Return a StatVar  object containing statisitcs about the size
+        * of the computed buffers. 
         **/
-        uint32_t statsMaxSize() const { return _stat_max; }
-
-
-        /**
-        * Return the average size the diffs created.
-        **/
-        uint32_t statsAvgSize() const { return ((_stat_nb > 0) ? round(((double)_stat_sum) / _stat_nb) : 0); }
-
-
-        /**
-        * Return the std on the size of the diffs created.
-        **/
-        uint32_t statsStdSize() const
-            {
-            if (_stat_nb == 0) return 0;
-            const double a = ((double)_stat_sum);
-            const double b = ((double)_stat_sumsqr);
-            const double c = sqrt((b / _stat_nb) - ((a * a) / (((uint64_t)_stat_nb) * _stat_nb)));
-            return (uint32_t)round(c);
-            }
-
-
-        /**
-        * Return the minimum time used to compute a diff (in us).
-        **/
-        uint32_t statsMinTime() const { return _stat_mintime; }
-
-
-        /**
-        * Return the maximum time used to compute a diff (in us).
-        **/
-        uint32_t statsMaxTime() const { return _stat_maxtime; }
-
-
-        /**
-        * Return the average time used to compute a diff (in us).
-        **/
-        uint32_t statsAvgTime() const { return ((_stat_nb > 0) ? round(((double)_stat_sumtime) / _stat_nb) : 0); }
-
-
-        /**
-        * Return the std on the time used to compute a diff (in us).
-        **/
-        uint32_t statsStdTime() const
-            {
-            if (_stat_nb == 0) return 0;
-            const double a = ((double)_stat_sumtime);
-            const double b = ((double)_stat_sumsqrtime);
-            const double c = sqrt((b / _stat_nb) - ((a * a) / (((uint64_t)_stat_nb) * _stat_nb)));
-            return (uint32_t)round(c);
-            }
+        StatsVar statsSize() const { return _stats_size; }
 
 
         /**
@@ -382,16 +334,10 @@ namespace ILI9341_T4
 
         /* member variables used for statistics */
 
-        volatile uint32_t _stat_nb;         // number of time a diff buffer was used
         volatile uint32_t _stat_overflow;   // number of times a diff buffer overflowed
-        volatile uint32_t _stat_min;        // min diff buffer size used
-        volatile uint32_t _stat_max;        // max diff buffer size used
-        volatile uint64_t _stat_sum;        // sum of all the diff buffer size
-        volatile uint64_t _stat_sumsqr;     // sum of the square of the buffer size for computing the std
-        volatile uint32_t _stat_mintime;    // min time it tok to compute a diff
-        volatile uint32_t _stat_maxtime;    // max time it tok to compute a diff
-        volatile uint64_t _stat_sumtime;    // sum of times used to compute diffs
-        volatile uint64_t _stat_sumsqrtime; // sum of the squares of the times for computing the std
+
+        StatsVar _stats_size;               // statistic on buffer size
+        StatsVar _stats_time;               // statistic on compute times. 
 
 
         /**
