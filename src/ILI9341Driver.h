@@ -59,10 +59,11 @@ namespace ILI9341_T4
 
 #define ILI9341_T4_DEFAULT_REFRESH_RATE  90          // set an inital refresh rate around 90 fps
 #define ILI9341_T4_DEFAULT_VSYNC_SPACING 2           // vsync on with framerate = refreshrate/2 = 45FPS. 
-#define ILI9341_T4_DEFAULT_DIFF_GAP 10               // default gap for diffs (typ. between 5 and 50)
+#define ILI9341_T4_DEFAULT_DIFF_GAP 6                // default gap for diffs (typ. between 4 and 50)
 #define ILI9341_T4_DEFAULT_DIFF_SPLIT 6              // default number of split/subframes when creating diffs. 
 #define ILI9341_T4_DEFAULT_LATE_START_RATIO 0.3      // default "proportion" of the frame admissible for late frame start when using vsync. 
 
+#define ILI9341_T4_TRANSACTION_DURATION 4           // number of pixels that could be uploaded during a typical CASET/PASET/RAWR sequence. 
 #define ILI9341_T4_RETRY_INIT 3                     // number of times we try initialization in begin() before returning an error. 
 #define ILI9341_T4_TFTWIDTH 240                     // screen dimension x (in default orientation 0)
 #define ILI9341_T4_TFTHEIGHT 320                    // screen dimension y (in default orientation 0)
@@ -70,7 +71,7 @@ namespace ILI9341_T4
 
 #define ILI9341_T4_NB_SCANLINE 162                  // scanlines are in the range [0,161]. 
 
-#define ILI9341_T4_MAX_VSYNC_SPACING 10             // max number of screen refresh between frames 
+#define ILI9341_T4_MAX_VSYNC_SPACING 10             // maximum number of screen refresh between frames (for sync clock stability). 
 #define ILI9341_T4_FAST_UNSAFE_DMA 1                // enable possibly unsafe optimizations. 
 #define ILI9341_T4_IRQ_PRIORITY 128                 // priority at which we run the irqs (dma and pit timer).
 #define ILI9341_T4_MAX_DELAY_MICROSECONDS 1000000   // maximum waiting time (1 second)
@@ -183,7 +184,7 @@ public:
     /***************************************************************************************************
     ****************************************************************************************************
     *
-    * Initialization and configuration.
+    * Initialization and general settings
     *
     ****************************************************************************************************
     ****************************************************************************************************/
@@ -278,10 +279,54 @@ public:
     inline int  getSpiClockRead() const { return _spi_clock_read; }
 
 
+
+    /***************************************************************************************************
+    ****************************************************************************************************
+    *
+    * Misc commands
+    *
+    ****************************************************************************************************
+    ****************************************************************************************************/
+
+
+
     /**
     * Enter/exit sleep mode.
     **/
     void sleep(bool enable);
+
+
+
+    /**
+    * Invert the display colors.
+    **/
+    void invertDisplay(bool i);
+
+
+
+    /***************************************************************************************************
+    ****************************************************************************************************
+    *
+    * Screen Orientation 
+    *
+    * -> these methods determine the screen orientation which affects the framebuffer dimensions and it 
+    *    layout.
+    *    Whenever possible, portrait orientation 0 (or 2 to a lesser degree) should be used as it is 
+    *    the one that will provide the fastest uploads and the fewest screen tear. 
+    *
+    ****************************************************************************************************
+    ****************************************************************************************************/
+
+
+    /** The 4 possible orientations */
+    enum
+        {
+        PORTRAIT_240x320            = 0,
+        LANDSCAPE_320x240           = 1,
+        PORTRAIT_240x320_FLIPPED    = 2,
+        LANDSCAPE_320x240_FLIPPED   = 3,
+        };
+
 
 
     /**
@@ -295,7 +340,8 @@ public:
     *
     * NOTE: Orientation 0 the the only one for with pixels refresh order coincide with the framebuffer
     * ordering so it it is the orientation that will allow the fastest diff redraw with fewest screen 
-    * tearing -> Use this orientation whenever possible.
+    * tearing -> Use this orientation whenever possible. The second best choice is orientation 2. the
+    * landscape modes 1 and 3 will perform (equally) less efficiently. 
     * 
     * Remark: calling this method reset the statistics (provided the orientation changes). 
     **/
@@ -323,21 +369,30 @@ public:
     inline int height() const { return _height; }
 
 
-    /**
-    * Invert the display colors.
-    **/
-    void invertDisplay(bool i);
+
+
+
+    /***************************************************************************************************
+    ****************************************************************************************************
+    *
+    * Screen refresh rate. 
+    * 
+    * -> these methods are used to set the screen refresh rate (number of time the screen is refresh 
+    *    per second). THis rate is important because it is related to the actual framerate via the 
+    *    vsync_spacing parameter (c.f. the vsync setting sdection). 
+    *
+    ****************************************************************************************************
+    ****************************************************************************************************/
 
 
     /**
     * set the refresh mode between 0 and 31.
-    * (corresponds to frame rate control, command  0xB1).
     *
     * - 0  : fastest refresh rate (around than 120/140hz). 
     * - 31 : slowest refresh rate (around 30/40hz).
     * 
     * NOTE: the refresh rate for a given mode varies from display to display. 
-    * Once the mode set, use getRefreshRate() to find out the real refresh rate.
+    * Once the mode set, use getRefreshRate() to find out the refresh rate.
     *
     * Remark: calling this method reset the statistics.
     **/
@@ -349,8 +404,6 @@ public:
     *
     * - 0  : fastest refresh rate (around than 120/140hz). 
     * - 31 : slowest refresh rate (around 30/40hz). 
-    *
-    * NOTE: the refresh rate for a given mode varies from display to display.
     **/
     int getRefreshMode() const { return _refreshmode; }
 
@@ -389,6 +442,19 @@ public:
 
 
 
+    /***************************************************************************************************
+    ****************************************************************************************************
+    *
+    * Vsync settings and framerate locking. 
+    *
+    * -> these methods decide how updates are carried out and wheter operations are synced with the 
+    *    display refresh rate or pushed as fast as possible. 
+    *
+    ****************************************************************************************************
+    ****************************************************************************************************/
+
+
+
     /**
     * This parameter defines the upload stategy and determines how the actual framerate relates 
     * to the display refresh rate. 
@@ -396,10 +462,11 @@ public:
     * This number must be between -1 and 10 = ILI9341_T4_MAX_VSYNC_SPACING.
     *
     * - vsync_spacing = -1. In this case, screen updates occur as soon as possible and some frames 
-    *                       may even be dropped if they are pushed to update() faster than they can
-    *                       be uploaded to the screen. This mode will provide the fastest 'apparent' 
-    *                       framerate but at the expanse of screen tearing (no vsync) and it also
-    *                       does not insure any framerate control/stability. 
+    *                       may even be dropped when using multi-buffering  if they are pushed to 
+    *                       update() faster than they can be uploaded to the screen. This mode will 
+    *                       provide the fastest 'apparent' framerate but at the expanse of screen 
+    *                       tearing (no vsync) and it also does not insure any framerate control/
+    *                       stability. 
     *
     * - vsync_spacing = 0. Again, screen updates are pushed to the screen as fast as possible but 
     *                      frames are not dropped so if all the internal framebuffers are filled
@@ -419,7 +486,7 @@ public:
     *
     *                      vsync_spacing should be set to either 1 (framerate = refresh_rate) 
     *                      or 2 (framerate = half refresh rate). Larger values are not really 
-    *                      useful except for corner cases. 
+    *                      useful except for special cases. 
     *
     * NOTE 1: In order to insure that screen tearing cannot occur, the upload must be done fast 
     *         enough so that the refresh scanline does not catch up with the pixels being drawn. 
@@ -427,8 +494,8 @@ public:
     *                               (2 - 1/nb_split) * refresh_period 
     *         where nb_split in the number of splitting parts of the diff and refresh period is
     *         the inverse of the refresh rate obviously. Thus increasing the number of splitting 
-	*         parts of the diffs with setDiffSplit() may help prevent screen tearing (but only
-	*         up to a point). 
+	*         parts of the diffs with setNbSplit() may help prevent screen tearing (but only up 
+    *         to a point). 
     *
     * NOTE 2: As stated above, screen tearing can be prevented if the frame upload can be done
     *         in roughly less than 2 refresh period. This is the reason why vsync_spacing = 2 
@@ -459,15 +526,204 @@ public:
 
 
     /**
+    * Set the number of subframes/splits used for upload: before uploading a framebuffer ot the screen,  
+    * it is first segmented in this number of sub-frame along the direction orthogonal to the refresh 
+    * scanline. 
+    *
+    * When vsync is active, the upload of each subframe is timed with the scanline to try prevent screen 
+    * tearing by always staying away from the scanline. The default value should be good for most cases.
+    * 
+    * NOTE: Setting this value to 1 will in effect disable vsync (but framerate locking will still be  
+    *       active if vsync_spacing > 0). It can bve usefull in orientation mode 1 and 3 where uploading 
+    *       subframes are less efficient than uploading the whole framebuffer at once.  However, in 
+    *       orientation mode 0 and 2 (portrait), this will provide any speedup as uploading subframes do 
+    *       not add any significant overhead. 
+    * 
+    * Remark: calling this method reset the statistics.
+    **/
+    void setNbSplit(int nb_split = ILI9341_T4_DEFAULT_DIFF_SPLIT)
+        {
+        waitUpdateAsyncComplete();
+        _diff_nb_split = _clip(nb_split, 1, DiffBuffBase::MAX_NB_SUBFRAME);
+        statsReset();
+        }
+
+
+    /**
+    * Return the number of subframe/splits per diff.
+    **/
+    int getNbSplit() const { return _diff_nb_split; }
+
+
+
+    /**
+    * Set how late we can be behind the initial sync line and still start uploading a frame without
+    * waiting for the next refresh for synchronization. Set a value in [0.0, 1.0]
+    *
+    * - Choosing a small value will reduce screen tearing but may make the framerate oscillate more
+    *   when the timing is tight.
+    *
+    * - Choosing a large value will stabilize the framerate but at the expense of more screen tearing
+    *   when the timing is tight.
+    *
+    * Remark: calling this method reset the statistics.
+    **/
+    void setLateStartRatio(double ratio = ILI9341_T4_DEFAULT_LATE_START_RATIO)
+    {
+        waitUpdateAsyncComplete();
+        _late_start_ratio = _clip(ratio, 0.0, 1.0);
+        statsReset();
+    }
+
+
+    /**
+    * Return the value of the "late start ratio" parameter.
+    **/
+    double getLateStartRatio() const { return _late_start_ratio; }
+
+
+
+
+    /***************************************************************************************************
+    ****************************************************************************************************
+    *
+    * Buffering mode 
+    * 
+    * -> these methods decide whether update operations are carried immediately or if the framebuffer is 
+    *    first copied internally for upload to be performed asynchronously (via DMA). 
+    * 
+    ****************************************************************************************************
+    ****************************************************************************************************/
+
+
+    /**
+    * Set/remove one (or two) internal framebuffers.
+    * 
+    * The mode of operation of the update() method depend on the number of internal diff buffer /framebuffers set:
+    *
+    * - 0 framebuffer: all updates operations are carried immediately (mode: NO_BUFFERING)
+    * - 1 framebuffers: double buffering using asynchronous transfer via DMA (mode: DOUBLE_BUFFERING_ONE_DIFF)
+    * - 2 framebuffers: triple buffering using asynchronous transfer via DMA  (mode: TRIPLE_BUFFERING)
+    * 
+    * ----------------------------------------------------------------------------------------------
+    * THESE FRAMEBUFFERS ARE GIVEN FOR INTERNAL USE BY THE CLASS AND MUST NOT BE MODIFIED ONCE SET. 
+    * YOU MUST USE ANOTHER FRAMEBUFFER FOR DRAWING AND THEN PASSING IT TO THE update() METHOD !
+    * IF YOU NEED TO GET THE FRAMEBUFFERS BACK, CALL THE METHOD AGAIN BUT WITH EMPTY PARAMETERS TO 
+    * DETACH THEM FROM THIS OBJECT. 
+    * ----------------------------------------------------------------------------------------------
+    * 
+    * Remark: calling this method reset the statistics.
+    **/
+    void setFramebuffers(uint16_t* fb1 = nullptr, uint16_t * fb2 = nullptr);
+
+
+
+    /** Buffering mode*/
+    enum
+        {
+        NO_BUFFERING = 0,
+        DOUBLE_BUFFERING = 2,
+        TRIPLE_BUFFERING = 3
+        };
+
+
+
+    /**
+    * Return the current buffering mode:
+    *
+    * - 0 = NO_BUFFERING     : all updates operations are carried immediately.
+    * - 2 = DOUBLE_BUFFERING : double buffering using asynchronous transfer via DMA.
+    * - 3 = TRIPLE_BUFFERING : triple buffering using asynchronous transfer via DMA.
+    * 
+    * NOTE : Triple buffering should use either  0 or 2 diff buffers. If  only 1 diff 
+    *        buffer is set in triple buffering mode, then it is simply ignored and 
+    *        differential update are disabled.
+    **/
+    int bufferingMode() const
+        {
+        if (_fb2) return TRIPLE_BUFFERING;
+        if (_fb1) return DOUBLE_BUFFERING;
+        return NO_BUFFERING; 
+        }
+
+
+
+    /***************************************************************************************************
+    ****************************************************************************************************
+    *
+    * Differential updates settings
+    * 
+    ****************************************************************************************************
+    ****************************************************************************************************/
+
+
+
+    /**
+    * Set/remove one (or two) internal diff buffers which enables/disables differential updates. 
+    *
+    * When diff buffers are set. They will be used whenever possible to create diff between the current 
+    * screen content and the new framebuffer to be uploaded and only pixels that changes will be uploaded
+    * which can drastically reduce the upload time and therefore provide a boost on the effective framerate. 
+    * 
+    * In order to use differential update, the driver must 'know' the current screen content which means that 
+    * buffering (either double or triople) must be active. Thus, to enable differential update, you must both 
+    * set at  least 1 diff buffer and 1 internal framebuffer. 
+    * 
+    * Setting a second diff buffer is optionnal in double buffering mode but can increase the framerate as it 
+    * allows to compute the diff of the next frame while still doing the async transfer of the previous one. 
+    * 
+    * IN TRIPLE BUFFERING MODE, 2 DIFF BUFFER ARE MANDATORY TO ENABLE DIFFERNETIAL UPDATES. IF ONLY ONE 
+    * DIFF BUFFER IS SET, IT WILL BE IGNORED.
+    *
+    * ----------------------------------------------------------------------------------------------
+    * ONCE SET, THE DIFFBUFFER BELONG TO THIS OBJECT AND MUST NOT BE TOUCHED FOR CREATING OR READING
+    * DIFFS OR THE WHOLE PROGRAM MAY CRASH !!!
+    *
+    * HOWEVER, IT IS STILL POSSIBLE TO CALL ALL THE STATSXXX() METHODS OF THE DIFFS TO CHECK MEMORY
+    * CONSUMPTION / CPU USAGE...
+    *
+    * IF YOU WANT THE DIFF BUFFER BACK, JUST CALL THE METHOD AGAIN WITH EMPTY PARAMETERS.
+    * ----------------------------------------------------------------------------------------------
+    *
+    * Remark: calling this method reset the stats if the buffering mode changes
+    **/
+    void setDiffBuffers(DiffBuffBase* diff1 = nullptr, DiffBuffBase* diff2 = nullptr);
+
+
+
+    /**
+    * Query whether we perform full update of differential updates. 
+    * 
+    * Differential updates are enabled as soon as the two conditions are meet:
+    * 
+    * - 1 internal framebuffer as been set (ie DOUBLE_BUFFERING is ON ) and 1 or 2
+    *   diff buffer is set. [Note that using 2 diff buffers instead of 1 usually 
+    *   provide an improved framerate so it should be the prefered solution especially 
+    *   since a diff buffer only cost a few kb of memory].
+    * 
+    * - 2 internal framebuffers (TRIPLE_BUFFERING) AND 2 diff buffers have been set. 
+    *   One diff buffer is not enough in triple buffering mode hence it will simply
+    *   be ignored if there is only one.
+    * 
+    * Of course, in direct mode (NO_BUFFERING), 
+    **/
+    bool diffUpdateActive() const
+        {
+        const int bm = bufferingMode();
+        return (((bm == DOUBLE_BUFFERING) && (_diff1 != nullptr)) || ((bm == TRIPLE_BUFFERING) && (_diff2 != nullptr)));
+        }
+
+
+
+    /**
     * Set the gap used when creating diffs. 
     * 
-    * See the DiffBuff class for more detail on the gap parameter.
+    * [See the DiffBuff class for more detail on the gap parameter].
 
     * This parameter correspond to the number of consecutive identical pixels needed to break a SPI transaction. 
-    * A smaller value will give more accurate (but larger) diffs. The optimal value should be between 5 and 100.
+    * A smaller value will give more accurate but larger diffs. The optimal value should be between 4 and 20.
     * 
-    * Experimenting first with a gap somewhere between 10 and 20 is a safe bet.... Try gap = 5 if you can afford
-    * diff buffers with up to 10K of memory. 
+    * Try gap = 4 if you can afford diff buffers with large memory (up to 10K of memory). 
     *
     * Remark: calling this method reset the statistics.
     **/
@@ -486,68 +742,22 @@ public:
 
 
     /**
-    * Set the number of subframes/splits used when creating a diff. If screen tearing occur, you can try increasing 
-    * this value but setting it too large will have the opposite effect...  The default value should be good for
-    * most cases. 
-    *
-    * Remark: calling this method reset the statistics.
-    **/
-    void setDiffSplit(int nb_split = ILI9341_T4_DEFAULT_DIFF_SPLIT)
-        {
-        waitUpdateAsyncComplete();
-        _diff_nb_split = _clip(nb_split, 1, DiffBuffBase::MAX_NB_SUBFRAME);
-        statsReset();
-        }
-
-
-    /**
-    * Return the number of subframe/splits per diff. 
-    **/
-    int getDiffSplit() const { return _diff_nb_split; }
-
-
-    /**
-    * Set how late we can be behind the initial sync line and still start uploading a frame without
-    * waiting for the next refresh for synchronization. Set a value in [0.0, 1.0]
-    * 
-    * - Choosing a small value will reduce screen tearing but may make the framerate oscillate more 
-    *   when the timing is tight.
-    * 
-    * - Choosing a large value will stabilize the framerate but at the expense of more screen tearing 
-    *   when the timing is tight.
-    *
-    * Remark: calling this method reset the statistics.
-    **/
-    void setLateStartRatio(double ratio = ILI9341_T4_DEFAULT_LATE_START_RATIO)
-        {
-        waitUpdateAsyncComplete();
-        _late_start_ratio = _clip(ratio, 0.0, 1.0);
-        statsReset();
-        }
-
-
-    /**
-    * Return the value of the "late start ratio" parameter. 
-    **/
-    double getLateStartRatio() const { return _late_start_ratio; }
-
-
-
-    /**
     * Set the mask used when creating a diff to check is a pixel is the same in both framebuffers. 
     * If the mask set is non-zero, then only the bits set in the mask are used for the comparison 
     * so pixels with differents values may be considered equal and may not redrawn.
     * 
     * Setting a mask may be useful when the framebuffer being uploaded to the screen comes from
     * a camera or another source that introduces random noise that would prevent the diff from
-    * finding large gap hence making it pretty useless. 
+    * finding large gap hence making it pretty useless but it does not really matter to have a 
+    * 'perfect' copy of the framebuffer onto the screen. 
+    * 
     * Typically, you want to set the lower bits on each channel color to 0 so that color that
     * are 'close' are not always redrawn (see the other method version below). 
     * 
     * If called without argument, the compare mask is set to 0 hence disabled and strict equality
     * is enforced when creating diffs (default behaviour).
     **/
-    void setCompareMask(uint16_t mask = 0)
+    void setDiffCompareMask(uint16_t mask = 0)
         {
         if (mask == 65535) mask = 0;
         _compare_mask = mask;
@@ -560,7 +770,7 @@ public:
     * 
     * Recall the there are 5 bits for the blue and  red channel and 6 bits for the green one. 
     **/
-    void setCompareMask(int bitskip_red, int bitskip_green, int bitskip_blue)
+    void setDiffCompareMask(int bitskip_red, int bitskip_green, int bitskip_blue)
         {
         _compare_mask = (((uint16_t)(((0xFF >> bitskip_red) << bitskip_red) & 31)) << 11)
                       | (((uint16_t)(((0xFF >> bitskip_green) << bitskip_green) & 63)) << 5)
@@ -577,80 +787,6 @@ public:
     uint16_t getCompareMask() const { return _compare_mask; }
 
 
-    /**
-    * Set/remove one (or two) internal framebuffers.
-    * 
-    * The mode of operation of the update() method depend on the number of internal diff buffer /framebuffers set:
-    *
-    * - 0 framebuffer: all updates operations are carried immediately (mode: NO_BUFFERING)
-    * - 1 framebuffers + 1 diff buffer : double buffering using asynchronous transfer via DMA (mode: DOUBLE_BUFFERING_ONE_DIFF)
-    * - 1 framebuffers + 2 diff buffer : faster double buffering using asynchronous transfer via DMA (mode: DOUBLE_BUFFERING_TWO_DIFF)
-    * - 2 framebuffers + 2 diff buffer : triple buffering using asynchronous transfer via DMA  (mode: TRIPLE_BUFFERING)
-    * 
-    * ----------------------------------------------------------------------------------------------
-    * THESE FRAMEBUFFERS ARE GIVEN FOR INTERNAL USE BY THE CLASS AND MUST NOT BE MODIFIED ONCE SET. 
-    * YOU MUST USE ANOTHER FRAMEBUFFER FOR DRAWING AND THEN PASSING IT TO THE update() METHOD !
-    * IF YOU NEED TO GET THE FRAMEBUFFERS BACK, CALL THE METHOD AGAIN BUT WITH EMPTY PARAMETERS TO 
-    * DETACH THEM FROM THIS OBJECT. 
-    * ----------------------------------------------------------------------------------------------
-    * 
-    * Remark: calling this method reset the statistics.
-    **/
-    void setFramebuffers(uint16_t* fb1 = nullptr, uint16_t * fb2 = nullptr);
-
-
-    /**
-    * Set/remove one (or two) internal diff buffers.
-    *
-    * The mode of operation of the update() method depend on the number of internal diff buffer /framebuffers set:
-    *
-    * - 0 framebuffer: all updates operations are carried immediately (mode: NO_BUFFERING)
-    * - 1 framebuffers + 1 diff buffer : double buffering using asynchronous transfer via DMA (mode: DOUBLE_BUFFERING_ONE_DIFF)
-    * - 1 framebuffers + 2 diff buffer : faster double buffering using asynchronous transfer via DMA (mode: DOUBLE_BUFFERING_TWO_DIFF)
-    * - 2 framebuffers + 2 diff buffer : triple buffering using asynchronous transfer via DMA  (mode: TRIPLE_BUFFERING)
-    *
-    * ----------------------------------------------------------------------------------------------
-    * ONCE SET, THE DIFFBUFFER BELONG TO THIS OBJECT AND MUST NOT BE USED FOR CREATING OR READING 
-	* DIFFS OR THE WHOLE PROGRAM MAY CRASH !!!
-    *
-    * HOWEVER, IT IS STILL POSSIBLE TO CALL ALL THE STATSXXX() METHOD OF THE DIFFS TO CHECK MEMORY 
-    * CONSUMPTION / CPU USAGE...
-    * 
-    * IF YOU WANT THE DIFF BUFFER BACK, JUST CALL THE METHOD AGAIN WITH EMPTY PARAMETERS. 
-    * ----------------------------------------------------------------------------------------------
-    * 
-    * Remark: calling this method reset the stats if the buffering mode changes
-    **/
-    void setDiffBuffers(DiffBuffBase* diff1 = nullptr, DiffBuffBase* diff2 = nullptr);
-
-
-
-    /** Buffering mode*/
-    enum
-        {
-        NO_BUFFERING = 0,
-        DOUBLE_BUFFERING_ONE_DIFF = 2,
-        DOUBLE_BUFFERING_TWO_DIFF = 3,
-        TRIPLE_BUFFERING = 4
-        };
-
-
-    /**
-    * Return the current buffering mode:
-    * 
-    * - NO_BUFFERING              : all updates operations are carried immediately.
-    * - DOUBLE_BUFFERING_ONE_DIFF : double buffering using asynchronous transfer via DMA.
-    * - DOUBLE_BUFFERING_TWO_DIFF : faster double buffering using asynchronous transfer via DMA.
-    * - TRIPLE_BUFFERING          : triple buffering using asynchronous transfer via DMA.
-    **/
-    int bufferingMode() const
-        {
-        if ((_fb1 == nullptr) || (_diff1 == nullptr)) return NO_BUFFERING;
-        if (_diff2 == nullptr) return DOUBLE_BUFFERING_ONE_DIFF;
-        if (_fb2 == nullptr) return DOUBLE_BUFFERING_TWO_DIFF;
-        return TRIPLE_BUFFERING;
-        }
-
 
 
 
@@ -666,19 +802,23 @@ public:
 
 
     /**
-    *                              MAIN SCREEN UPDATE METHOD
+    *                                 MAIN SCREEN UPDATE METHOD
     * 
     * Push a framebuffer to be displayed on the screen. The behaviour of the method depend on the 
     * current buffering mode and the vsync_spacing parameter. 
     * 
-    * If force_full_redraw = true, then the whole screen updated even if a diff could have been used. 
-    * Normally, this option should not be needed except in the case you know for sure that the diff
-    * will be useless. 
+    * If force_full_redraw = true, then differential update is disable for this particular frame 
+    * and the whole screen updated (even if a diff could have been used). Normally, this option 
+    * should not be needed except in the very special cases where one knows for sure that the diff
+    * will be useless so disabling it saves some CPU times that would have been needed for  the diff 
+    * creation (betwwen 500us/1.5ms normally). If you know that diff will always be useless. Just 
+    * disable differential updates by removing the diff buffers by calling setDiffBuffers()... 
     * 
-    * When the method returns, the framebuffer may (or not) already be displayed on the screen yet
-    * it can be reused immediately in any case. 
-    * 
-    * Buffering mode:
+    * WHEN THE METHOD RETURNS, THE FRAME MAY OR MAY NOT ALREADY BE DISPLAYED ONT THE SCREEN BUT
+    * THE INPUT FRAMEBUFFER fb CAN STILL BE REUSED IMMEDIATELY IN ANY CASE (A COPY IS MADE WHEN 
+    * USING ASYNC UPDATES). 
+    *
+    * Depending on bufferingMode():
     * 
     * NO_BUFFERING: 
 	*
@@ -688,8 +828,11 @@ public:
     * 
     *   - if vsync_spacing >= 1. screen upload is synchronized with the screen refresh and the 
     *     method waits until vsync_spacing refreshes have occured since the previous update to insure
-    *     a constant framerate equal to  (refresh_rate/vsync_spacing).
-    *                      
+    *     a constant framerate equal to  (refresh_rate/vsync_spacing).  
+    *    
+    *     NOTE: If buffering is disabled, there are not internal copy of the current screen content
+    *           and therefore differential updates are also disabled (even if a diff buffer is present).
+    *
     * 
     * DOUBLE_BUFFERING_ONE_DIFF / DOUBLE_BUFFERING_TWO_DIFF
     * 
@@ -707,7 +850,11 @@ public:
     *     insure a constant framerate equal to  (refresh_rate/vsync_spacing). If a transfer is 
     *     already in progress, it waits for it to complete before scheduling the next transfer
     *     via DMA and returning.
-    *   
+    *
+    *
+    *     NOTE: If buffering is disabled, there are not internal copy of the current screen content
+    *           and therefore differential updates are also disabled (even if a diff buffer is present).
+    *
     * 
     * TRIPLE_BUFFERING
     *
@@ -731,16 +878,26 @@ public:
     *     the framebuffer and scheduling the redraw and then returning. 
     * 
     * 
-    * NOTE: (1) double buffering give a HUGE improvement over the no buffering method at the 
-    *           expense of a second framebuffer and at least one diff buffer.
-    *       (2) A second diff buffer cost only a few additonal kilobytes but will improve the 
-    *           framerate in cases where the upload takes most of a frame period. 
-    *       (3) Triple buffering requires another framebuffer dedicated for storing intermediate 
-    *           frames. Some testing suggests that triple buffering provides only modest improvement 
-    *           over double buffering with two diff buffers hence it should be used only if you 
-    *           really have nothing better to do will all that memory !
+    * NOTE: (1) If buffering is disabled, there are not internal copy of the current screen 
+                content and therefore differential updates are also disabled (even if a diff 
+                buffer is present). Otherwise, if both at least one diff buffer and 1 framebuffer
+                are present, then differnetial updates is enable by default (excpet if overriden
+                by the force_full_redraw parameter). 
+    * 
+    *       (2) double buffering give a HUGE improvement over the no buffering method at the 
+    *           expense of a memory framebuffer (150K). 
+    * 
+    *       (3) Setting two diffs buffers instead of one cost only a few additonal kilobytes but 
+    *           will usually improve the max framerate by a few FPS since is permits to pre-
+    *           compute the diff while the previous update is still ongoing. 
+    * 
+    *       (4) Triple buffering requires another framebuffer for storing intermediate frames. 
+    *           Some testing suggests that triple buffering provides only modest improvement 
+    *           over double buffering compared to the associated cost so it should be used only 
+    *           if you really have nothing better to do will all that memory !
     *     
-    * ADVICE: Use double buffering with two diff buffers (with size ranging from 5K to 10K). 
+    * ADVICE: USE DOUBLE BUFFERING (I.E. 1 INTERNAL FRAMEBUFFER) WITH 2 DIFF BUFFERS (WITH SIZE
+    *         RANGING FROM 5K TO 10K). 
     **/
     void update(const uint16_t* fb, bool force_full_redraw = false);
 
@@ -813,10 +970,36 @@ public:
 
 
     /**
+    * Return the ratio of the average number of pixels uploaded per frame 
+    * compared to the total number of pixel is the screen.
+    **/
+    double statsRatioPixelPerFrame() const  { return (((double)_statsvar_uploaded_pixels.avg()) / ILI9341_T4_NB_PIXELS); }
+
+
+    /**
     * Return an object containing statistics about the number of transactions
     * per frame.
     **/
     StatsVar statsTransactionsPerFrame() const { return _statsvar_transactions; }
+
+
+    /**
+    * Return an estimate of the speed up obtained by using the differential updates 
+    * compared to full updates. This estimate is only about the time needed to upload 
+    * the pixels without taking vsync into account. 
+    * 
+    * This value is computed by looking at the average number of pixels uploaded per frame
+    * together with the average number of transactions per frame (with each transaction 
+    * counting as ILI9341_T4_TRANSACTION_DURATION pixel upload) and then comparing it with
+    * the number of pixels in a frame. 
+    * 
+    * A small value is good :-)
+    **/
+    double statsDiffSpeedUp() const
+        {
+        if ((!diffUpdateActive())|| (_statsvar_transactions.count() == 0)) return 1.0;
+        return ILI9341_T4_NB_PIXELS/((ILI9341_T4_TRANSACTION_DURATION * _statsvar_transactions.avg()) + (_statsvar_uploaded_pixels.avg()));
+        }
 
 
     /**
@@ -893,7 +1076,7 @@ public:
     * If the touch_irq pin is assigned, it will avoid using the spi bus whenever possible.
     *
     * If the spi bus must be used. The method will wait until the current ongoinc async
-    * transfer completes (if any).
+    * transfer completes (if any) so this method may sometime stall for a few milliseconds. 
     **/
     void readTouch(int& x, int& y, int& z);
 
@@ -919,6 +1102,8 @@ public:
 
 
 private:
+
+
 
 
     /**********************************************************************************************************

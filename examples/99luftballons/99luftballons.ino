@@ -12,9 +12,9 @@
 * code for drawing colored balls.
 ********************************************************************/
 
-// drawing size in landscape mode
-#define LX  320
-#define LY  240
+// drawing size in portrait mode
+#define LX  240
+#define LY  320
 
 
 /** fill a framebuffer with a given color*/
@@ -144,16 +144,17 @@ void setup()
         Serial.println("Initialization error...");
 
     // configuration for double buffering with two diff buffers
-    tft.setRotation(1);                 // landscape mode 320x240 
-    tft.setFramebuffers(internal_fb);   // set the internal framebuffer
-    tft.setDiffBuffers(&diff1, &diff2); // set the diff buffers        
+    tft.setRotation(0);                 // portrait mode 240 x320 (fastest!)
+    tft.setFramebuffers(internal_fb);   // set the internal framebuffer (activate double buffering)
+    tft.setDiffBuffers(&diff1, &diff2); // set the 2 diff buffers (activate differential updates)
     tft.setDiffGap(4);                  // use a small gap for the diff buffers 
-    tft.setDiffSplit(6);                // standard value
-    tft.setRefreshRate(120);            // 100 hz refresh
 
     // vsync_spacing = 2 means we want 120/2 = 60 Hz fixed framerate with vsync enabled.
-	// Try also setting this to 0 to find the maximum framerate (without vsync).
-    tft.setVsyncSpacing(2); 
+    // but at 30mhz spi, it would even work with vsync_spacing = 1 and refresh rate = 80hz
+    // to get a solid 80fps... Try also setting  vsync_spacing = 0 to find out the maximum 
+    //framerate (without vsync) which will be around 100fps. 
+    tft.setRefreshRate(120);            // 120hz refresh rate
+    tft.setVsyncSpacing(2);             // set framerate (and enable vsync at the same time). 
 
     if (PIN_BACKLIGHT != 255)
         { // make sure backlight is on

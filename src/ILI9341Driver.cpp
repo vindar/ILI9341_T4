@@ -520,56 +520,52 @@ namespace ILI9341_T4
 
     void ILI9341Driver::update(const uint16_t* fb, bool force_full_redraw)
         {
-        const int bmode = bufferingMode();
-        switch (bmode)
+        const int nbsplit = ((_vsync_spacing > 0) ? _diff_nb_split : 1); // no need to split when vsync_spacing <= 0
+        switch (bufferingMode())
             {
             case NO_BUFFERING:
                 {
                 waitUpdateAsyncComplete(); // wait until update is done (normally useless but still). 
                 _mirrorfb = nullptr;
-                if (_vsync_spacing <= 0)
-                    {          
-                    _dummydiff1->computeDummyDiff(width(), height(), getRotation(), 1); // create a dummy diff with a single split (fastest). 
-                    _updateNow(fb, _dummydiff1);
-                    return;
-                    }
-                _dummydiff1->computeDummyDiff(width(), height(), getRotation(), _diff_nb_split); // create a dummy diff with the occrest number of splits. 
+                _dummydiff1->computeDummyDiff(width(), height(), getRotation(), nbsplit); // create a dummy diff with a single split (fastest). 
                 _updateNow(fb, _dummydiff1);
                 return;
                 }
 
-            case DOUBLE_BUFFERING_ONE_DIFF:
+            case DOUBLE_BUFFERING:
                 {                
                 if ((_vsync_spacing == -1) && (asyncUpdateActive())) { return; } // just drop the frame. 
-                waitUpdateAsyncComplete(); // wait until update is done. 
-                if ((_mirrorfb == nullptr)||(force_full_redraw))
-                    { // complete redraw needed. 
-                    _dummydiff1->computeDiff(_fb1, fb, width(), height(), getRotation(), _diff_nb_split, _diff_gap, true, _compare_mask); // create a dummy diff and copy to fb1. 
-                    _updateAsync(_fb1, _dummydiff1); // launch update
-                    }
-                else
-                    { // diff redraw 
-                    _diff1->computeDiff(_fb1, fb, width(), height(), getRotation(), _diff_nb_split, _diff_gap, true, _compare_mask); // create a diff and copy to fb1. 
-                    _updateAsync(_fb1, _diff1); // launch update
-                    }
-                _mirrorfb = _fb1; // set as mirror
-                return;
-                }
 
-            case DOUBLE_BUFFERING_TWO_DIFF:
-                {
-                if ((_vsync_spacing == -1)&&(asyncUpdateActive())) return; // just drop the frame. 
-                if ((_mirrorfb == nullptr)||(force_full_redraw))
-                    { // complete redraw needed. 
+                if ((_diff1 == nullptr)|| (_mirrorfb == nullptr) || (force_full_redraw))
+                    { // do not use differential update
                     waitUpdateAsyncComplete(); // wait until update is done. 
-                    _dummydiff1->computeDiff(_fb1, fb, width(), height(), getRotation(), _diff_nb_split, _diff_gap, true, _compare_mask); // create a dummy diff and copy to fb1. 
+                    _dummydiff1->computeDiff(_fb1, fb, width(), height(), getRotation(), nbsplit, _diff_gap, true, _compare_mask); // create a dummy diff and copy to fb1. 
                     _updateAsync(_fb1, _dummydiff1); // launch update
                     _mirrorfb = _fb1; // set as mirror
                     return;
                     }
+
+                if (_diff2 == nullptr)
+                    { // double buffering with a single diff
+                    waitUpdateAsyncComplete(); // wait until update is done. 
+                    if ((_mirrorfb == nullptr) || (force_full_redraw))
+                        { // complete redraw needed. 
+                        _dummydiff1->computeDiff(_fb1, fb, width(), height(), getRotation(), nbsplit, _diff_gap, true, _compare_mask); // create a dummy diff and copy to fb1. 
+                        _updateAsync(_fb1, _dummydiff1); // launch update
+                        }
+                    else
+                        { // diff redraw 
+                        _diff1->computeDiff(_fb1, fb, width(), height(), getRotation(), nbsplit, _diff_gap, true, _compare_mask); // create a diff and copy to fb1. 
+                        _updateAsync(_fb1, _diff1); // launch update
+                        }
+                    _mirrorfb = _fb1; // set as mirror
+                    return;
+                    }
+
+                // double buffering with two diffs 
                 if (asyncUpdateActive())
                     { // _diff2 is available so we use it to create the diff while update is in progress. 
-                    _diff2->computeDiff(_fb1, fb, width(), height(), getRotation(), _diff_nb_split, _diff_gap, false, _compare_mask); // create a diff without copying                    
+                    _diff2->computeDiff(_fb1, fb, width(), height(), getRotation(), nbsplit, _diff_gap, false, _compare_mask); // create a diff without copying                    
                     waitUpdateAsyncComplete(); // wait until update is done.                    
                     _copyfb(_fb1, fb); // save the framebuffer in fb1               
                     _swapdiff();  // swap the diffs so that diff1 contain the new diff.                     
@@ -577,7 +573,7 @@ namespace ILI9341_T4
                     }
                 else
                     {
-                    _diff1->computeDiff(_fb1, fb, width(), height(), getRotation(), _diff_nb_split, _diff_gap, true, _compare_mask); // create a diff and copy
+                    _diff1->computeDiff(_fb1, fb, width(), height(), getRotation(), nbsplit, _diff_gap, true, _compare_mask); // create a diff and copy
                     _updateAsync(_fb1, _diff1); // launch update
                     }
                 _mirrorfb = _fb1; // set as mirror
@@ -585,17 +581,17 @@ namespace ILI9341_T4
                 }
 
             case TRIPLE_BUFFERING:
-                {
+                { 
                 if (!asyncUpdateActive())
                     { // we can launch immediately
-                    if ((_mirrorfb == nullptr)||(force_full_redraw))
+                    if ((_diff2 == nullptr)||(_mirrorfb == nullptr)||(force_full_redraw))
                         { // complete redraw needed. 
-                        _dummydiff1->computeDiff(_fb1, fb, width(), height(), getRotation(), _diff_nb_split, _diff_gap, true, _compare_mask); // create a dummy diff and copy to fb1. 
+                        _dummydiff1->computeDiff(_fb1, fb, width(), height(), getRotation(), nbsplit, _diff_gap, true, _compare_mask); // create a dummy diff and copy to fb1. 
                         _updateAsync(_fb1, _dummydiff1); // launch update
                         }
                     else
                         {
-                        _diff1->computeDiff(_fb1, fb, width(), height(), getRotation(), _diff_nb_split, _diff_gap, true, _compare_mask); // create a diff and copy
+                        _diff1->computeDiff(_fb1, fb, width(), height(), getRotation(), nbsplit, _diff_gap, true, _compare_mask); // create a diff and copy
                         _updateAsync(_fb1, _diff1); // launch update
                         }
                     _mirrorfb = _fb1; // set as mirror
@@ -614,9 +610,9 @@ namespace ILI9341_T4
                     { // update still in progress so we replace_fb2.
                     _setCB(); // remove callback to prevent upload of fb2
                     interrupts();
-                    if ((_mirrorfb)&&(!force_full_redraw))
+                    if ((_mirrorfb)&&(!force_full_redraw)&&(_diff2 != nullptr))
                         {
-                        _diff2->computeDiff(_fb1, fb, width(), height(), getRotation(), _diff_nb_split, _diff_gap, false, _compare_mask); // create a diff without copying
+                        _diff2->computeDiff(_fb1, fb, width(), height(), getRotation(), nbsplit, _diff_gap, false, _compare_mask); // create a diff without copying
                         _copyfb(_fb2, fb); // save in fb2
                         noInterrupts();
                         if (asyncUpdateActive())
@@ -639,14 +635,14 @@ namespace ILI9341_T4
                         }
                     else
                         {
-                        _dummydiff2->computeDiff(_fb1, fb, width(), height(), getRotation(), _diff_nb_split, _diff_gap, false, _compare_mask); // create a dummy diff without copy
+                        _dummydiff2->computeDiff(_fb1, fb, width(), height(), getRotation(), nbsplit, _diff_gap, false, _compare_mask); // create a dummy diff without copy
                         _copyfb(_fb2, fb); // save in fb2
                         noInterrupts();
                         if (asyncUpdateActive())
                             { // update still in progress...
                             _setCB(&ILI9341Driver::_buffer2fullCB); // set a callback
                             _fb2full = true; // and mark buffer as full. 
-                            _mirrorfb = nullptr; // this infoprm that we have a dummy diff in _dummdiff2
+                            _mirrorfb = nullptr; // this inform that we have a dummy diff in _dummdiff2
                             interrupts();
                             return; // done
                             }
@@ -663,14 +659,14 @@ namespace ILI9341_T4
                     }
                 else
                     { // we can launch immediately
-                    if ((_mirrorfb == nullptr)||(force_full_redraw))
+                    if ((_mirrorfb == nullptr)||(force_full_redraw)||(_diff2 == nullptr))
                         { // complete redraw needed. 
-                        _dummydiff1->computeDiff(_fb1, fb, width(), height(), getRotation(), _diff_nb_split, _diff_gap, true, _compare_mask); // create a dummy diff and copy to fb1. 
+                        _dummydiff1->computeDiff(_fb1, fb, width(), height(), getRotation(), nbsplit, _diff_gap, true, _compare_mask); // create a dummy diff and copy to fb1. 
                         _updateAsync(_fb1, _dummydiff1); // launch update
                         }
                     else
                         {
-                        _diff1->computeDiff(_fb1, fb, width(), height(), getRotation(), _diff_nb_split, _diff_gap, true, _compare_mask); // create a diff and copy
+                        _diff1->computeDiff(_fb1, fb, width(), height(), getRotation(), nbsplit, _diff_gap, true, _compare_mask); // create a diff and copy
                         _updateAsync(_fb1, _diff1); // launch update
                         }
                     _mirrorfb = _fb1; // set as mirror
@@ -1325,58 +1321,81 @@ namespace ILI9341_T4
         outputStream->printf("----------------- ILI9341Driver Stats ----------------\n");
         outputStream->printf("[Configuration]\n");
         outputStream->printf("- SPI speed          : write=%u  read=%u\n", _spi_clock, _spi_clock_read);
-        outputStream->printf("- screen orientation : %u  (%u x %u ", getRotation(), width(), height());
-        outputStream->printf((getRotation() & 1) ? " landscape)\n" : " portrait)\n");
+        outputStream->printf("- screen orientation : ");
+        switch (getRotation())
+            {
+        case 0: outputStream->printf("0 (PORTRAIT_240x320)  best mode!\n"); break;
+        case 1: outputStream->printf("1 (LANDSCAPE_320x240)\n"); break;
+        case 2: outputStream->printf("2 (PORTRAIT_240x320_FLIPPED)\n"); break;
+        case 3: outputStream->printf("3 (LANDSCAPE_320x240_FLIPPED)\n"); break;
+            }
+
         outputStream->printf("- refresh rate       : %.1fHz  (mode %u)\n\n", getRefreshRate(), getRefreshMode());
         outputStream->printf("[Buffering settings]\n");
         int m = bufferingMode();
-        outputStream->printf("- mode               : %u", m);
+        outputStream->printf("- buffering mode     : %u", m);
         switch (m)
             {
-        case NO_BUFFERING: 
-            outputStream->printf(" (NO BUFFERING)\n", getRefreshRate(), getRefreshMode()); break;
-        case DOUBLE_BUFFERING_ONE_DIFF:
-            outputStream->printf(" (DOUBLE BUFFERING, 1 DIFF)\n", getRefreshRate(), getRefreshMode()); break;
-        case DOUBLE_BUFFERING_TWO_DIFF:
-            outputStream->printf(" (DOUBLE BUFFERING, 2 DIFFS)\n", getRefreshRate(), getRefreshMode()); break;
-        case TRIPLE_BUFFERING:
-            outputStream->printf(" (TRIPLE BUFFERING)\n", getRefreshRate(), getRefreshMode()); break;
+        case NO_BUFFERING:  outputStream->printf(" (NO BUFFERING)\n"); break;
+        case DOUBLE_BUFFERING: outputStream->printf(" (DOUBLE BUFFERING)\n"); break;
+        case TRIPLE_BUFFERING: outputStream->printf(" (TRIPLE BUFFERING)\n"); break;
             }
         outputStream->printf("- vsync_spacing      : %i ", _vsync_spacing);
         if (_vsync_spacing <= 0)
             outputStream->printf(" (VSYNC DISABLED).\n");
-        else 
+        else         
             outputStream->printf(" (VSYNC ENABLED).\n");
 
-        outputStream->printf("- requested FPS      : ");
+        outputStream->printf("- requested FPS      : ");        
         if (_vsync_spacing == -1)
             outputStream->printf("max fps [drop frames when busy]\n");
         else if (_vsync_spacing == 0)
             outputStream->printf("max fps [do not drop frames]\n");
         else
-            outputStream->printf("%.1fHz\n", getRefreshRate()/_vsync_spacing);
+            outputStream->printf("%.1fHz = [ = refresh_rate / vsync_spacing]\n", getRefreshRate()/_vsync_spacing);
 
-        outputStream->printf("- diff [nb_split]    : %u\n", _diff_nb_split);
-        outputStream->printf("- diff [gap]         : %u\n", _diff_gap);
+        if (_vsync_spacing > 0)
+            outputStream->printf("- number of subframes: %u\n", _diff_nb_split);
 
-        if (_compare_mask == 0)
+        if (diffUpdateActive())
             {
-            outputStream->printf("- diff [compare_mask]: STRICT COMPARISON.");
+            if (_diff2)
+                {
+                outputStream->printf("- differential update: ENABLED - 2 diffs buffers.\n");
+                }
+            else 
+                {
+                outputStream->printf("- differential update: ENABLED - 1 diff buffer.\n");
+                }
+            outputStream->printf("- diff [gap]         : %u\n", _diff_gap);
+            if (_compare_mask == 0)
+                {
+                outputStream->printf("- diff [compare_mask]: STRICT COMPARISON.");
+                }
+            else
+                {
+                outputStream->printf("- diff [compare_mask]: R=");
+                for (int i = 15; i >= 11; i--) { outputStream->print(bitRead(_compare_mask, i) ? '1' : '0'); }
+                outputStream->printf(" G=");
+                for (int i = 10; i >= 5; i--) { outputStream->print(bitRead(_compare_mask, i) ? '1' : '0'); }
+                outputStream->printf(" B=");
+                for (int i = 4; i >= 0; i--) { outputStream->print(bitRead(_compare_mask, i) ? '1' : '0'); }
+                }
             }
         else
             {
-            outputStream->printf("- diff [compare_mask]: R=");
-            for (int i = 15; i >= 11; i--) { outputStream->print(bitRead(_compare_mask, i) ? '1' : '0'); }
-            outputStream->printf(" G=");
-            for (int i = 10; i >= 5; i--) { outputStream->print(bitRead(_compare_mask, i) ? '1' : '0'); }
-            outputStream->printf(" B=");
-            for (int i = 4; i >= 0; i--) { outputStream->print(bitRead(_compare_mask, i) ? '1' : '0'); }
+            if (_diff1 == nullptr)
+                outputStream->printf("- differential update: DISABLED.\n");
+            else
+                outputStream->printf("- differential update: DISABLED [ONLY 1 DIFF BUFFER PROVIDED WHEN 2 ARE NEEDED WITH TRIPLE BUFFERING]\n");
             }
+
         outputStream->printf("\n\n[Statistics]\n");
         outputStream->printf("- average framerate  : %.1f FPS  (%u frames in %ums)\n", statsFramerate(), statsNbFrames(), statsTotalTime());
         outputStream->printf("- upload rate        : %.1f FPS\n", 1000000.0/_statsvar_uploadtime.avg());
         outputStream->printf("- upload time / frame: "); _statsvar_uploadtime.print("us", "\n", outputStream);
         outputStream->printf("- CPU time / frame   : "); _statsvar_cputime.print("us", "\n", outputStream);
+        if (diffUpdateActive()) outputStream->printf("- est. speedup       : %.1fx compared to full redraw\n", statsDiffSpeedUp());
         outputStream->printf("- pixels / frame     : "); _statsvar_uploaded_pixels.print("", "\n", outputStream);
         outputStream->printf("- transact. / frame  : "); _statsvar_transactions.print("", "\n", outputStream);
         if (_vsync_spacing > 0)
