@@ -147,11 +147,11 @@ void setup()
     tft.setRotation(1);                 // landscape mode 320x240 
     tft.setFramebuffers(internal_fb);   // set the internal framebuffer
     tft.setDiffBuffers(&diff1, &diff2); // set the diff buffers        
-    tft.setDiffGap(5);                  // use a small gap for the diff buffers 
+    tft.setDiffGap(4);                  // use a small gap for the diff buffers 
     tft.setDiffSplit(6);                // standard value
-    tft.setRefreshRate(100);            // 100 hz refresh
+    tft.setRefreshRate(120);            // 100 hz refresh
 
-    // vsync_spacing = 2 means we want 100/2 = 50 Hz fixed framerate with vsync enabled.
+    // vsync_spacing = 2 means we want 120/2 = 60 Hz fixed framerate with vsync enabled.
 	// Try also setting this to 0 to find the maximum framerate (without vsync).
     tft.setVsyncSpacing(2); 
 
@@ -180,7 +180,6 @@ void loop()
 
         if (++nbf % 2000 == 500)
         { // prints stats every 2000 frames. 
-            Serial.println("************************************************************");
             tft.printStats();
             diff1.printStats();
             diff2.printStats();
