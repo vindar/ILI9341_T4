@@ -8,9 +8,8 @@
 #include "ILI9341Driver.h"
 
 
-// drawing size in landscape mode
-#define LX  320
-#define LY  240
+// screen dimension, depending on the mode. 
+int LX, LY; 
 
 
 /** fill a framebuffer with a given color */
@@ -83,8 +82,8 @@ ILI9341_T4::DiffBuffStatic<6000> diff2;
 
 
 // framebuffers
-uint16_t internal_fb[LX*LY];     // used for buffering
-uint16_t fb[LX*LY];              // main framebuffer we draw onto.
+uint16_t internal_fb[320 * 240];     // used for buffering
+uint16_t fb[320 * 240];              // main framebuffer we draw onto.
 
 
 void setup()
@@ -94,10 +93,15 @@ void setup()
     if (!tft.begin(SPI_SPEED))
         Serial.println("Initialization error...");
 
-    // configuration for double buffering with two diff buffers
-    tft.setRotation(1);                 // landscape mode 320x240 
-    tft.setFramebuffers(internal_fb);   // set the internal framebuffer
-    tft.setDiffBuffers(&diff1, &diff2); // set the diff buffers        
+
+    LX = tft.width();  // save screen dimension for the drawing methods. 
+    LY = tft.height(); //
+
+    tft.setRotation(0);                 // start in portrait mode 240x320
+
+    tft.setFramebuffers(internal_fb);   // set 1 internal framebuffer > enable double buffering
+
+    tft.setDiffBuffers(&diff1, &diff2); // set 2 diff buffers -> enables diffenrential updates.
   
     if (PIN_BACKLIGHT != 255)
         { // make sure backlight is on
@@ -106,7 +110,7 @@ void setup()
         }
 
     tft.setRefreshRate(40); // start with a screen refresh rate around 40hz
-    tft.setVsyncSpacing(8); // and a frame rate around 40/8 = 5Hz (slow !!!)
+    tft.setVsyncSpacing(8); // and a frame rate around 40/8 = 5Hz (very slow !!!)
     }
 
 
@@ -121,17 +125,18 @@ void loop()
     {
     clear(fb, 65535); // draw a white background 
 
-    int x = 160 + 80 * cos(a * 0.03);  // the center of the disk 
-    int y = 120 + 40 * sin(a * 0.03);  // follows an ellipse.
+    int x = LX/2 + 50 * cos(a * 0.02);  // the center of the disk 
+    int y = LY/2 + 50 * sin(a * 0.02);  // move around a bit
     drawDisk(fb, x, y, 60, ((++a & 1) ? RED : BLUE)); // alternate blue and red color at each frame. 
 
     tft.update(fb); // push the framebuffer to be displayed
 
-    adjustFramerate(); // change the framerate / operation mode.  
+    adjustMode(); // change the framerate / operation mode / orientation  
     }
 
 
-void adjustFramerate()
+
+void adjustMode()
     {
     switch (n++)
         {
@@ -149,21 +154,33 @@ void adjustFramerate()
         tft.setVsyncSpacing(1);  // around 40 Hz (framerate = refreshrate)
         break;
     case 200:
-        tft.setRefreshRate(60); // around 60 Hz 
+        tft.setRefreshRate(60); // around 60 Hz (changing framerate will pause the animation for a short time). 
         break;
     case 350:
-        tft.setRefreshRate(90); // around 90 Hz
+        tft.setRefreshRate(90); // around 90 Hz (changing framerate will pause the animation for a short time)
         break;
-    case 550:
-        tft.setVsyncSpacing(0);  // disable vsync => screen tearing !
+    case 700:       
+        tft.setVsyncSpacing(0);  // disable vsync => create screen tearing :-(
         break;
-    case 800:
-        tft.setVsyncSpacing(1);  // vsync back on => no more tearing :-)
+    case 1400:        
+        tft.setVsyncSpacing(1);  // vsync back on => prevent screen tearing :-)
+        tft.setRotation((tft.getRotation() + 1) & 3); // cycle over the possible orientations 
+        LX = tft.width();  // update the screen dimension
+        LY = tft.height(); //
         n = 351; // loop. 
         }
     if (tft.getVsyncSpacing() > 0)
-        Serial.printf("- Alternating red / blue circles at %u fps. VSYNC ENABLED\n", (int)round(tft.getRefreshRate() / tft.getVsyncSpacing()));
+        {
+        Serial.printf("- Alternating red / blue circles at %u fps. in orientation %d\n  VSYNC ENABLED => no screen tearing.\n\n", 
+                      (int)round(tft.getRefreshRate() / tft.getVsyncSpacing()), tft.getRotation());
+        }        
     else
-        Serial.printf("- Alternating red / blue circles at maximum fps. VSYNC DISABLED)\n");
+        {
+        Serial.printf("- Alternating red / blue circles at maximum fps. in orientation %d\n  VSYNC DISABLED => ", tft.getRotation());
+        Serial.printf((tft.getRotation() & 1) ? "diagonal screen tearing\n\n" : "straight screen tearing\n\n");
+        }
     }
+
+
+/** end of file */
 

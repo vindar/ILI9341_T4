@@ -96,12 +96,12 @@ struct Ball
 * With 30MHz SPI, the theoretical maximum framerate when doing full
 * framebuffer redraw is 24 FPS. 
 * 
-* Here, we get around 70 FPS (without vsync) and a stable 50 FPS with 
+* Here, we get around 100 FPS (without vsync) and a stable 60 FPS with 
 * vsync (guaranteed screen tearing free!).
 ********************************************************************/
 
 
-// 30MHz SPI. We can do much better with short wires
+// 30MHz SPI. We could do much better with short wires
 #define SPI_SPEED		30000000
 
 
@@ -127,9 +127,9 @@ ILI9341_T4::DiffBuffStatic<6000> diff1;
 ILI9341_T4::DiffBuffStatic<6000> diff2;
 
 
-// framebuffers
-uint16_t internal_fb[LX*LY];     // used for buffering
-uint16_t fb[LX*LY];              // main framebuffer we draw onto.
+// our framebuffers
+uint16_t internal_fb[LX*LY];     // used by the library for buffering
+uint16_t fb[LX*LY];              // the main framebuffer we draw onto.
 
 
 // our 99 luftballons
@@ -140,21 +140,28 @@ void setup()
     {
     Serial.begin(9600); 
 
-    if (!tft.begin(SPI_SPEED))
+    while (!tft.begin(SPI_SPEED))
+        {
         Serial.println("Initialization error...");
+        delay(1000);
+        }
 
-    // configuration for double buffering with two diff buffers
-    tft.setRotation(0);                 // portrait mode 240 x320 (fastest!)
-    tft.setFramebuffers(internal_fb);   // set the internal framebuffer (activate double buffering)
-    tft.setDiffBuffers(&diff1, &diff2); // set the 2 diff buffers (activate differential updates)
-    tft.setDiffGap(4);                  // use a small gap for the diff buffers 
 
-    // vsync_spacing = 2 means we want 120/2 = 60 Hz fixed framerate with vsync enabled.
-    // but at 30mhz spi, it would even work with vsync_spacing = 1 and refresh rate = 80hz
-    // to get a solid 80fps... Try also setting  vsync_spacing = 0 to find out the maximum 
-    //framerate (without vsync) which will be around 100fps. 
-    tft.setRefreshRate(120);            // 120hz refresh rate
-    tft.setVsyncSpacing(2);             // set framerate (and enable vsync at the same time). 
+    tft.setRotation(0);                 // portrait mode 240 x320 (fastest orientation)
+
+    tft.setFramebuffers(internal_fb);   // set 1 internal framebuffer -> activate double buffering.
+
+    tft.setDiffBuffers(&diff1, &diff2); // set the 2 diff buffers -> activate differential updates. 
+    tft.setDiffGap(4);                  // use a very small gap for the diff buffers
+
+
+    // Below, vsync_spacing = 2 means we want 120/2=60Hz fixed framerate with vsync enabled.
+    // At 30mhz spi, we could even choose vsync_spacing = 1 and refresh rate = 80hz
+    // to get a solid 80fps and it still works. You can Try also setting vsync_spacing = 0 
+    // to find out the maximum  framerate without vsync (which will be around 100fps). 
+
+    tft.setRefreshRate(120);            // around 120hz for the display refresh rate. 
+    tft.setVsyncSpacing(0);             // set framerate (and enable vsync at the same time). 
 
     if (PIN_BACKLIGHT != 255)
         { // make sure backlight is on
@@ -186,4 +193,7 @@ void loop()
             diff2.printStats();
         }
     }
+
+
+/** end of file */
 

@@ -57,7 +57,6 @@ namespace ILI9341_T4
 #define ILI9341_T4_DEFAULT_SPICLOCK 30000000         // default SPI write speed, some display can work up to 80Mhz...
 #define ILI9341_T4_DEFAULT_SPICLOCK_READ 4000000     // default SPI read speed (much slower then write speed)
 
-#define ILI9341_T4_DEFAULT_REFRESH_RATE  90          // set an inital refresh rate around 90 fps
 #define ILI9341_T4_DEFAULT_VSYNC_SPACING 2           // vsync on with framerate = refreshrate/2 = 45FPS. 
 #define ILI9341_T4_DEFAULT_DIFF_GAP 6                // default gap for diffs (typ. between 4 and 50)
 #define ILI9341_T4_DEFAULT_DIFF_SPLIT 6              // default number of split/subframes when creating diffs. 
@@ -394,6 +393,8 @@ public:
     * NOTE: the refresh rate for a given mode varies from display to display. 
     * Once the mode set, use getRefreshRate() to find out the refresh rate.
     *
+    * By default the refresh mode selcted is 0 (fastest possible). 
+    * 
     * Remark: calling this method reset the statistics.
     **/
     void setRefreshMode(int mode);

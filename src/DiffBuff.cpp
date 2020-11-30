@@ -160,7 +160,6 @@ namespace ILI9341_T4
 
 
 // innner loop is expanded EXPAND_LOOP times. 
-
 #define ILI9341_T4_DIFFBUF_INNER_LOOP2(INDEX)     {                                                             \
                                                   if (COPY_NEW_OVER_OLD) fb_old[v + INDEX] = fb_new[v + INDEX]; \
                                                   if (cgap >= gap)                                              \

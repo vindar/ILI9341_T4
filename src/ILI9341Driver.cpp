@@ -110,6 +110,8 @@ namespace ILI9341_T4
                                              //  3, 0xb1, 0x00, 0x10 + ILI9341_T4_DEFAULT_REFRESH_MODE, // FrameRate Control 
                                                  0 };
 
+        statsReset();
+        _mirrorfb = nullptr; // force full redraw.
 
         if (_touch_cs != 255)
             { // set touch CS high to prevent interference.
@@ -210,14 +212,7 @@ namespace ILI9341_T4
             _beginSPITransaction(_spi_clock / 4); // quarter speed for setup ! 
             _writecommand_last(ILI9341_T4_DISPON); // Display on
             _endSPITransaction();
-              
-            setRefreshMode(0);
-
-            _period_mode0 = _period; // save the period for fastest mode. 
-            setRefreshRate(ILI9341_T4_DEFAULT_REFRESH_RATE); // change mode if needed. 
-            statsReset();
-            _mirrorfb = nullptr; // force full redraw.
-         
+                     
             // if everything is ok, we should have:
             // - Display Power Mode = 0x9C
             // - Pixel Format = 0x5
@@ -240,6 +235,9 @@ namespace ILI9341_T4
                 continue;
                 }
             // all good, ready to warp pixels :-)
+            // ok, we can talk to the display so we set the (max) refresh rate to read its exact values
+            setRefreshMode(0);
+            _period_mode0 = _period; // save the period for fastest mode. 
             return true; 
             }
         return false; 
@@ -1330,8 +1328,7 @@ namespace ILI9341_T4
         case 3: outputStream->printf("3 (LANDSCAPE_320x240_FLIPPED)\n"); break;
             }
 
-        outputStream->printf("- refresh rate       : %.1fHz  (mode %u)\n\n", getRefreshRate(), getRefreshMode());
-        outputStream->printf("[Buffering settings]\n");
+        outputStream->printf("- refresh rate       : %.1fHz  (mode %u)\n", getRefreshRate(), getRefreshMode());
         int m = bufferingMode();
         outputStream->printf("- buffering mode     : %u", m);
         switch (m)
@@ -1352,7 +1349,7 @@ namespace ILI9341_T4
         else if (_vsync_spacing == 0)
             outputStream->printf("max fps [do not drop frames]\n");
         else
-            outputStream->printf("%.1fHz = [ = refresh_rate / vsync_spacing]\n", getRefreshRate()/_vsync_spacing);
+            outputStream->printf("%.1fHz [=refresh_rate/vsync_spacing]\n", getRefreshRate()/_vsync_spacing);
 
         if (_vsync_spacing > 0)
             outputStream->printf("- number of subframes: %u\n", _diff_nb_split);
@@ -1361,11 +1358,11 @@ namespace ILI9341_T4
             {
             if (_diff2)
                 {
-                outputStream->printf("- differential update: ENABLED - 2 diffs buffers.\n");
+                outputStream->printf("- diff. updates      : ENABLED - 2 diffs buffers.\n");
                 }
             else 
                 {
-                outputStream->printf("- differential update: ENABLED - 1 diff buffer.\n");
+                outputStream->printf("- diff. updates      : ENABLED - 1 diff buffer.\n");
                 }
             outputStream->printf("- diff [gap]         : %u\n", _diff_gap);
             if (_compare_mask == 0)
@@ -1385,7 +1382,7 @@ namespace ILI9341_T4
         else
             {
             if (_diff1 == nullptr)
-                outputStream->printf("- differential update: DISABLED.\n");
+                outputStream->printf("- diff. updates      : DISABLED.\n");
             else
                 outputStream->printf("- differential update: DISABLED [ONLY 1 DIFF BUFFER PROVIDED WHEN 2 ARE NEEDED WITH TRIPLE BUFFERING]\n");
             }
@@ -1395,7 +1392,7 @@ namespace ILI9341_T4
         outputStream->printf("- upload rate        : %.1f FPS\n", 1000000.0/_statsvar_uploadtime.avg());
         outputStream->printf("- upload time / frame: "); _statsvar_uploadtime.print("us", "\n", outputStream);
         outputStream->printf("- CPU time / frame   : "); _statsvar_cputime.print("us", "\n", outputStream);
-        if (diffUpdateActive()) outputStream->printf("- est. speedup       : %.1fx compared to full redraw\n", statsDiffSpeedUp());
+        if (diffUpdateActive()) outputStream->printf("- estimated speedup  : %.1fx compared to full redraw\n", statsDiffSpeedUp());
         outputStream->printf("- pixels / frame     : "); _statsvar_uploaded_pixels.print("", "\n", outputStream);
         outputStream->printf("- transact. / frame  : "); _statsvar_transactions.print("", "\n", outputStream);
         if (_vsync_spacing > 0)
