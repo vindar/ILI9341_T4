@@ -538,6 +538,7 @@ namespace ILI9341_T4
                     { // do not use differential update
                     waitUpdateAsyncComplete(); // wait until update is done. 
                     _dummydiff1->computeDiff(_fb1, fb, width(), height(), getRotation(), nbsplit, _diff_gap, true, _compare_mask); // create a dummy diff and copy to fb1. 
+                    _flush_cache(_fb1, ILI9341_T4_NB_PIXELS * 2);
                     _updateAsync(_fb1, _dummydiff1); // launch update
                     _mirrorfb = _fb1; // set as mirror
                     return;
@@ -549,11 +550,13 @@ namespace ILI9341_T4
                     if ((_mirrorfb == nullptr) || (force_full_redraw))
                         { // complete redraw needed. 
                         _dummydiff1->computeDiff(_fb1, fb, width(), height(), getRotation(), nbsplit, _diff_gap, true, _compare_mask); // create a dummy diff and copy to fb1. 
+                        _flush_cache(_fb1, ILI9341_T4_NB_PIXELS * 2);
                         _updateAsync(_fb1, _dummydiff1); // launch update
                         }
                     else
                         { // diff redraw 
                         _diff1->computeDiff(_fb1, fb, width(), height(), getRotation(), nbsplit, _diff_gap, true, _compare_mask); // create a diff and copy to fb1. 
+                        _flush_cache(_fb1, ILI9341_T4_NB_PIXELS * 2);
                         _updateAsync(_fb1, _diff1); // launch update
                         }
                     _mirrorfb = _fb1; // set as mirror
@@ -567,11 +570,13 @@ namespace ILI9341_T4
                     waitUpdateAsyncComplete(); // wait until update is done.                    
                     _copyfb(_fb1, fb); // save the framebuffer in fb1               
                     _swapdiff();  // swap the diffs so that diff1 contain the new diff.                     
+                    _flush_cache(_fb1, ILI9341_T4_NB_PIXELS * 2);
                     _updateAsync(_fb1, _diff1); // launch update
                     }
                 else
                     {
                     _diff1->computeDiff(_fb1, fb, width(), height(), getRotation(), nbsplit, _diff_gap, true, _compare_mask); // create a diff and copy
+                    _flush_cache(_fb1, ILI9341_T4_NB_PIXELS * 2);
                     _updateAsync(_fb1, _diff1); // launch update
                     }
                 _mirrorfb = _fb1; // set as mirror
@@ -585,11 +590,13 @@ namespace ILI9341_T4
                     if ((_diff2 == nullptr)||(_mirrorfb == nullptr)||(force_full_redraw))
                         { // complete redraw needed. 
                         _dummydiff1->computeDiff(_fb1, fb, width(), height(), getRotation(), nbsplit, _diff_gap, true, _compare_mask); // create a dummy diff and copy to fb1. 
+                        _flush_cache(_fb1, ILI9341_T4_NB_PIXELS * 2);
                         _updateAsync(_fb1, _dummydiff1); // launch update
                         }
                     else
                         {
                         _diff1->computeDiff(_fb1, fb, width(), height(), getRotation(), nbsplit, _diff_gap, true, _compare_mask); // create a diff and copy
+                        _flush_cache(_fb1, ILI9341_T4_NB_PIXELS * 2);
                         _updateAsync(_fb1, _diff1); // launch update
                         }
                     _mirrorfb = _fb1; // set as mirror
@@ -612,6 +619,7 @@ namespace ILI9341_T4
                         {
                         _diff2->computeDiff(_fb1, fb, width(), height(), getRotation(), nbsplit, _diff_gap, false, _compare_mask); // create a diff without copying
                         _copyfb(_fb2, fb); // save in fb2
+                        _flush_cache(_fb2, ILI9341_T4_NB_PIXELS * 2);
                         noInterrupts();
                         if (asyncUpdateActive())
                             { // update still in progress...
@@ -635,6 +643,7 @@ namespace ILI9341_T4
                         {
                         _dummydiff2->computeDiff(_fb1, fb, width(), height(), getRotation(), nbsplit, _diff_gap, false, _compare_mask); // create a dummy diff without copy
                         _copyfb(_fb2, fb); // save in fb2
+                        _flush_cache(_fb2, ILI9341_T4_NB_PIXELS * 2);
                         noInterrupts();
                         if (asyncUpdateActive())
                             { // update still in progress...
@@ -660,11 +669,13 @@ namespace ILI9341_T4
                     if ((_mirrorfb == nullptr)||(force_full_redraw)||(_diff2 == nullptr))
                         { // complete redraw needed. 
                         _dummydiff1->computeDiff(_fb1, fb, width(), height(), getRotation(), nbsplit, _diff_gap, true, _compare_mask); // create a dummy diff and copy to fb1. 
+                        _flush_cache(_fb1, ILI9341_T4_NB_PIXELS * 2);
                         _updateAsync(_fb1, _dummydiff1); // launch update
                         }
                     else
                         {
                         _diff1->computeDiff(_fb1, fb, width(), height(), getRotation(), nbsplit, _diff_gap, true, _compare_mask); // create a diff and copy
+                        _flush_cache(_fb1, ILI9341_T4_NB_PIXELS * 2);
                         _updateAsync(_fb1, _diff1); // launch update
                         }
                     _mirrorfb = _fb1; // set as mirror
@@ -839,7 +850,7 @@ namespace ILI9341_T4
         _startframe(_vsync_spacing > 0);
         _dma_state = ILI9341_T4_DMA_ON;
         _dmaObject[_spi_num] = this; // set up object callback.
-        _flush_cache(fb, 2 * ILI9341_T4_NB_PIXELS);
+        //_flush_cache(fb, 2 * ILI9341_T4_NB_PIXELS); // BEWARE THAT CACHE IF FLUSHED BEFORE CALLING THIS METHOD !
         _fb = fb;
         _diff = diff;                
         _margin = ILI9341_T4_NB_SCANLINE;
