@@ -1,6 +1,6 @@
 /********************************************************************
-* 
-* ILI9341_T4 library example. vsync and screen tearing demo. 
+*
+* ILI9341_T4 library example. vsync and screen tearing demo.
 *
 ********************************************************************/
 
@@ -9,18 +9,18 @@
 
 
 // screen dimension, depending on the mode. 
-int LX, LY; 
+int LX, LY;
 
 
 /** fill a framebuffer with a given color */
 void clear(uint16_t* fb, uint16_t color = 0)
     {
-    for (int i = 0; i < LX*LY; i++) fb[i] = color;
+    for (int i = 0; i < LX * LY; i++) fb[i] = color;
     }
 
 
 /** draw a disk centered at (x,y) with radius r and color col on the framebuffer fb */
-void drawDisk(uint16_t * fb, double x, double y, double r, uint16_t col)
+void drawDisk(uint16_t* fb, double x, double y, double r, uint16_t col)
     {
     int xmin = (int)(x - r);
     int xmax = (int)(x + r);
@@ -33,7 +33,7 @@ void drawDisk(uint16_t * fb, double x, double y, double r, uint16_t col)
     const double r2 = r * r;
     for (int j = ymin; j <= ymax; j++)
         {
-        double dy2 = (y - j)*(y -j);
+        double dy2 = (y - j) * (y - j);
         for (int i = xmin; i <= xmax; i++)
             {
             const double dx2 = (x - i) * (x - i);
@@ -46,11 +46,11 @@ void drawDisk(uint16_t * fb, double x, double y, double r, uint16_t col)
 
 /********************************************************************
 * This example demonstrates the effect of vsync on screen tearing.
-* At each frame, a disk is drawn, alternatingly in red and blue. 
-* 
-* When vsync is activated and the framerate becomes high enough, the 
-* disk appear to be solid violet ! When vsync is disabled, screen 
-* tearing becomes apparent... 
+* At each frame, a disk is drawn, alternatingly in red and blue.
+*
+* When vsync is activated and the framerate becomes high enough, the
+* disk appear to be solid violet ! When vsync is disabled, screen
+* tearing becomes apparent...
 ********************************************************************/
 
 
@@ -88,7 +88,7 @@ uint16_t fb[320 * 240];              // main framebuffer we draw onto.
 
 void setup()
     {
-    Serial.begin(9600); 
+    Serial.begin(9600);
 
     if (!tft.begin(SPI_SPEED))
         Serial.println("Initialization error...");
@@ -102,15 +102,15 @@ void setup()
     tft.setFramebuffers(internal_fb);   // set 1 internal framebuffer > enable double buffering
 
     tft.setDiffBuffers(&diff1, &diff2); // set 2 diff buffers -> enables diffenrential updates.
-  
+
     if (PIN_BACKLIGHT != 255)
         { // make sure backlight is on
         pinMode(PIN_BACKLIGHT, OUTPUT);
-        digitalWrite(PIN_BACKLIGHT, HIGH);        
+        digitalWrite(PIN_BACKLIGHT, HIGH);
         }
 
     tft.setRefreshRate(40); // start with a screen refresh rate around 40hz
-    tft.setVsyncSpacing(8); // and a frame rate around 40/8 = 5Hz (very slow !!!)
+    tft.setVSyncSpacing(8); // and a frame rate around 40/8 = 5Hz (very slow !!!)
     }
 
 
@@ -125,8 +125,8 @@ void loop()
     {
     clear(fb, 65535); // draw a white background 
 
-    int x = LX/2 + 50 * cos(a * 0.02);  // the center of the disk 
-    int y = LY/2 + 50 * sin(a * 0.02);  // move around a bit
+    int x = LX / 2 + 50 * cos(a * 0.02);  // the center of the disk 
+    int y = LY / 2 + 50 * sin(a * 0.02);  // move around a bit
     drawDisk(fb, x, y, 60, ((++a & 1) ? RED : BLUE)); // alternate blue and red color at each frame. 
 
     tft.update(fb); // push the framebuffer to be displayed
@@ -140,18 +140,18 @@ void adjustMode()
     {
     switch (n++)
         {
-    default:    
+    default:
         return;
-    case 0:     
+    case 0:
         break; // we start around 5Hz
     case 15:
-        tft.setVsyncSpacing(4);  // around 10hz (framerate = refreshrate/4)
+        tft.setVSyncSpacing(4);  // around 10hz (framerate = refreshrate/4)
         break;
     case 45:
-        tft.setVsyncSpacing(2);  // around 20 Hz (framerate = refreshrate/2)
+        tft.setVSyncSpacing(2);  // around 20 Hz (framerate = refreshrate/2)
         break;
     case 100:
-        tft.setVsyncSpacing(1);  // around 40 Hz (framerate = refreshrate)
+        tft.setVSyncSpacing(1);  // around 40 Hz (framerate = refreshrate)
         break;
     case 200:
         tft.setRefreshRate(60); // around 60 Hz (changing framerate will pause the animation for a short time). 
@@ -159,21 +159,21 @@ void adjustMode()
     case 350:
         tft.setRefreshRate(90); // around 90 Hz (changing framerate will pause the animation for a short time)
         break;
-    case 700:       
-        tft.setVsyncSpacing(0);  // disable vsync => create screen tearing :-(
+    case 700:
+        tft.setVSyncSpacing(0);  // disable vsync => create screen tearing :-(
         break;
-    case 1400:        
-        tft.setVsyncSpacing(1);  // vsync back on => prevent screen tearing :-)
+    case 1400:
+        tft.setVSyncSpacing(1);  // vsync back on => prevent screen tearing :-)
         tft.setRotation((tft.getRotation() + 1) & 3); // cycle over the possible orientations 
         LX = tft.width();  // update the screen dimension
         LY = tft.height(); //
         n = 351; // loop. 
         }
-    if (tft.getVsyncSpacing() > 0)
+    if (tft.getVSyncSpacing() > 0)
         {
-        Serial.printf("- Alternating red / blue circles at %u fps. in orientation %d\n  VSYNC ENABLED => no screen tearing.\n\n", 
-                      (int)round(tft.getRefreshRate() / tft.getVsyncSpacing()), tft.getRotation());
-        }        
+        Serial.printf("- Alternating red / blue circles at %u fps. in orientation %d\n  VSYNC ENABLED => no screen tearing.\n\n",
+            (int)round(tft.getRefreshRate() / tft.getVSyncSpacing()), tft.getRotation());
+        }
     else
         {
         Serial.printf("- Alternating red / blue circles at maximum fps. in orientation %d\n  VSYNC DISABLED => ", tft.getRotation());

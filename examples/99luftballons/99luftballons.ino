@@ -161,7 +161,7 @@ void setup()
     // to find out the maximum  framerate without vsync (which will be around 100fps). 
 
     tft.setRefreshRate(120);            // around 120hz for the display refresh rate. 
-    tft.setVsyncSpacing(2);             // set framerate (and enable vsync at the same time). 
+    tft.setVSyncSpacing(2);             // set framerate (and enable vsync at the same time). 
 
     if (PIN_BACKLIGHT != 255)
         { // make sure backlight is on
