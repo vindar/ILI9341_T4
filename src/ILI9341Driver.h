@@ -519,7 +519,7 @@ public:
     * 
     * Remark: calling this method reset the statistics.
     **/
-    void setVsyncSpacing(int vsync_spacing = ILI9341_T4_DEFAULT_VSYNC_SPACING)
+    void setVSyncSpacing(int vsync_spacing = ILI9341_T4_DEFAULT_VSYNC_SPACING)
         {
         waitUpdateAsyncComplete();
         _vsync_spacing = _clip(vsync_spacing, -1, ILI9341_T4_MAX_VSYNC_SPACING);
@@ -531,7 +531,7 @@ public:
     /**
     * Return the current vsync_spacing parameter. 
     **/
-    int getVsyncSpacing() const { return _vsync_spacing;  }
+    int getVSyncSpacing() const { return _vsync_spacing;  }
 
 
     /**
