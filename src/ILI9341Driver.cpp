@@ -41,6 +41,7 @@ namespace ILI9341_T4
 
         // buffering
         _late_start_ratio = ILI9341_T4_DEFAULT_LATE_START_RATIO;
+        _late_start_ratio_override = true;
         _diff_nb_split = ILI9341_T4_DEFAULT_DIFF_SPLIT;
         _diff_gap = ILI9341_T4_DEFAULT_DIFF_GAP;
         _vsync_spacing = ILI9341_T4_DEFAULT_VSYNC_SPACING;
@@ -111,6 +112,7 @@ namespace ILI9341_T4
                                                  0 };
 
         statsReset();
+        resync(); // resync at first upload
         _mirrorfb = nullptr; // force full redraw.
 
         if (_touch_cs != 255)
@@ -247,6 +249,7 @@ namespace ILI9341_T4
     int ILI9341Driver::selfDiagStatus()
         {
         waitUpdateAsyncComplete();
+        resync();
         return _readcommand8(ILI9341_T4_RDSELFDIAG);
         }
 
@@ -269,7 +272,8 @@ namespace ILI9341_T4
             outputStream->println(" [OK].\n");
         else
             outputStream->println(" [ERROR].\n");
-    }
+        resync();
+        }
 
 
     void ILI9341Driver::sleep(bool enable)
@@ -291,6 +295,7 @@ namespace ILI9341_T4
             _endSPITransaction();
             delay(20);
             }
+        resync();
         }
 
 
@@ -335,6 +340,7 @@ namespace ILI9341_T4
                 break;
             }
         _endSPITransaction();
+        resync();
         }
 
 
@@ -344,6 +350,7 @@ namespace ILI9341_T4
         _beginSPITransaction(_spi_clock / 4); // quarter speed
         _writecommand_last(i ? ILI9341_T4_INVON : ILI9341_T4_INVOFF);
         _endSPITransaction();
+        resync();
         }
 
 
@@ -363,6 +370,7 @@ namespace ILI9341_T4
             _fb1 = fb2;
             _fb2 = fb1;
             }
+        resync();
         }
 
 
@@ -409,6 +417,7 @@ namespace ILI9341_T4
         delayMicroseconds(50); 
         _sampleRefreshRate(); // estimate the real refreshrate
         statsReset();
+        resync();
         }
 
 
@@ -525,7 +534,7 @@ namespace ILI9341_T4
                 {
                 waitUpdateAsyncComplete(); // wait until update is done (normally useless but still). 
                 _mirrorfb = nullptr;
-                _dummydiff1->computeDummyDiff(width(), height(), getRotation(), nbsplit); // create a dummy diff with a single split (fastest). 
+                _dummydiff1->computeDummyDiff(width(), height(), getRotation(), _dummyDiffNbSplit()); 
                 _updateNow(fb, _dummydiff1);
                 return;
                 }
@@ -537,7 +546,7 @@ namespace ILI9341_T4
                 if ((_diff1 == nullptr)|| (_mirrorfb == nullptr) || (force_full_redraw))
                     { // do not use differential update
                     waitUpdateAsyncComplete(); // wait until update is done. 
-                    _dummydiff1->computeDiff(_fb1, fb, width(), height(), getRotation(), nbsplit, _diff_gap, true, _compare_mask); // create a dummy diff and copy to fb1. 
+                    _dummydiff1->computeDiff(_fb1, fb, width(), height(), getRotation(), _dummyDiffNbSplit(), _diff_gap, true, _compare_mask); // create a dummy diff and copy to fb1. 
                     _flush_cache(_fb1, ILI9341_T4_NB_PIXELS * 2);
                     _updateAsync(_fb1, _dummydiff1); // launch update
                     _mirrorfb = _fb1; // set as mirror
@@ -549,7 +558,7 @@ namespace ILI9341_T4
                     waitUpdateAsyncComplete(); // wait until update is done. 
                     if ((_mirrorfb == nullptr) || (force_full_redraw))
                         { // complete redraw needed. 
-                        _dummydiff1->computeDiff(_fb1, fb, width(), height(), getRotation(), nbsplit, _diff_gap, true, _compare_mask); // create a dummy diff and copy to fb1. 
+                        _dummydiff1->computeDiff(_fb1, fb, width(), height(), getRotation(), _dummyDiffNbSplit(), _diff_gap, true, _compare_mask); // create a dummy diff and copy to fb1. 
                         _flush_cache(_fb1, ILI9341_T4_NB_PIXELS * 2);
                         _updateAsync(_fb1, _dummydiff1); // launch update
                         }
@@ -589,7 +598,7 @@ namespace ILI9341_T4
                     { // we can launch immediately
                     if ((_diff2 == nullptr)||(_mirrorfb == nullptr)||(force_full_redraw))
                         { // complete redraw needed. 
-                        _dummydiff1->computeDiff(_fb1, fb, width(), height(), getRotation(), nbsplit, _diff_gap, true, _compare_mask); // create a dummy diff and copy to fb1. 
+                        _dummydiff1->computeDiff(_fb1, fb, width(), height(), getRotation(), _dummyDiffNbSplit(), _diff_gap, true, _compare_mask); // create a dummy diff and copy to fb1. 
                         _flush_cache(_fb1, ILI9341_T4_NB_PIXELS * 2);
                         _updateAsync(_fb1, _dummydiff1); // launch update
                         }
@@ -641,7 +650,7 @@ namespace ILI9341_T4
                         }
                     else
                         {
-                        _dummydiff2->computeDiff(_fb1, fb, width(), height(), getRotation(), nbsplit, _diff_gap, false, _compare_mask); // create a dummy diff without copy
+                        _dummydiff2->computeDiff(_fb1, fb, width(), height(), getRotation(), _dummyDiffNbSplit(), _diff_gap, false, _compare_mask); // create a dummy diff without copy
                         _copyfb(_fb2, fb); // save in fb2
                         _flush_cache(_fb2, ILI9341_T4_NB_PIXELS * 2);
                         noInterrupts();
@@ -668,7 +677,7 @@ namespace ILI9341_T4
                     { // we can launch immediately
                     if ((_mirrorfb == nullptr)||(force_full_redraw)||(_diff2 == nullptr))
                         { // complete redraw needed. 
-                        _dummydiff1->computeDiff(_fb1, fb, width(), height(), getRotation(), nbsplit, _diff_gap, true, _compare_mask); // create a dummy diff and copy to fb1. 
+                        _dummydiff1->computeDiff(_fb1, fb, width(), height(), getRotation(), _dummyDiffNbSplit(), _diff_gap, true, _compare_mask); // create a dummy diff and copy to fb1. 
                         _flush_cache(_fb1, ILI9341_T4_NB_PIXELS * 2);
                         _updateAsync(_fb1, _dummydiff1); // launch update
                         }
@@ -745,8 +754,14 @@ namespace ILI9341_T4
             int endi2 = (int)((ILI9341_T4_NB_SCANLINE - 1 - endi) * _late_start_ratio + endi); // but after this position, we will wait for the next frame
             uint32_t t2 = _microToReachScanLine(endi2, true);                                  // how to get there ?  resync at the same time while spi is inactive        
             uint32_t t = _microToReachScanLine(endi, false);                                   // and there ? 
-            if (t2 < t) t = 0;                                                                 // we are in [endi endi2] so we start now                   
-
+            if (_late_start_ratio_override)
+                { // force resync which is the same as asking _late_start_ratio=0;
+                _late_start_ratio_override = false; // oneshot. 
+                }
+            else
+                {
+                if (t2 < t) t = 0;                                                                 // we are in [endi endi2] so we start now                   
+                }
             _pauseUploadTime();
             if (t > 0) delayMicroseconds(t);                                                   // wait if needed
             while ((t = _microToExitRange(0, endi))) { delayMicroseconds(t); }                 // make sure we are good (in case delayMicroseconds() in not precise enough).
@@ -981,8 +996,15 @@ namespace ILI9341_T4
         int endi2 = (int)((ILI9341_T4_NB_SCANLINE - 1 - endi) * _late_start_ratio + endi); // but after this position, we will wait for the next frame
         uint32_t t2 = _microToReachScanLine(endi2, true);                                  // how to get there ?  resync at the same time while spi is inactive        
         uint32_t t = _microToReachScanLine(endi, false);                                   // and there ? 
-        if (t2 < t) t = 0;                                                                 // we are in [endi endi2] so we start now                   
-         _pauseUploadTime();
+        if (_late_start_ratio_override)
+            { // force resync which is the same as asking _late_start_ratio=0;
+            _late_start_ratio_override = false; // oneshot. 
+            }
+        else
+            {
+            if (t2 < t) t = 0;                                                                 // we are in [endi endi2] so we start now                   
+            }        
+        _pauseUploadTime();
         _setTimerIn(t, &ILI9341Driver::_subFrameTimerStartcb2);                            // call when ready to start transfer.        
         _pauseCpuTime();
         return;

@@ -59,8 +59,12 @@ namespace ILI9341_T4
 
 #define ILI9341_T4_DEFAULT_VSYNC_SPACING 2           // vsync on with framerate = refreshrate/2 = 45FPS. 
 #define ILI9341_T4_DEFAULT_DIFF_GAP 6                // default gap for diffs (typ. between 4 and 50)
-#define ILI9341_T4_DEFAULT_DIFF_SPLIT 6              // default number of split/subframes when creating diffs. 
+#define ILI9341_T4_DEFAULT_DIFF_SPLIT 8              // default number of split/subframes when creating diffs. 
 #define ILI9341_T4_DEFAULT_LATE_START_RATIO 0.3      // default "proportion" of the frame admissible for late frame start when using vsync. 
+
+#define ILI9341_T4_DUMMYDIFF_NBSLIP_VERT 160         // number of subframes for dummy diff when using synced update in mode 0 and 2. (every 2 lines). 
+#define ILI9341_T4_DUMMYDIFF_NBSLIP_HOR 10           // number of subframes for dummy diff when using synced update in mode 1 and 3. 
+                                                     // (not too much because each subframe need 240x transactions, 10 seems to give the best results). 
 
 #define ILI9341_T4_TRANSACTION_DURATION 4           // number of pixels that could be uploaded during a typical CASET/PASET/RAWR sequence. 
 #define ILI9341_T4_RETRY_INIT 3                     // number of times we try initialization in begin() before returning an error. 
@@ -249,6 +253,7 @@ public:
         waitUpdateAsyncComplete();
         _spi_clock = spi_clock; 
         statsReset();
+        resync();
         };
 
 
@@ -268,6 +273,7 @@ public:
         waitUpdateAsyncComplete();
         _spi_clock_read = spi_clock; 
         statsReset();
+        resync();
         }
     
 
@@ -423,6 +429,7 @@ public:
         {
         const int m = _modeForRefreshRate(refreshrate_hz);
         setRefreshMode(m);
+        resync();
         }
 
 
@@ -517,6 +524,7 @@ public:
         waitUpdateAsyncComplete();
         _vsync_spacing = _clip(vsync_spacing, -1, ILI9341_T4_MAX_VSYNC_SPACING);
         statsReset();
+        resync();
         }
 
 
@@ -545,8 +553,9 @@ public:
     void setNbSplit(int nb_split = ILI9341_T4_DEFAULT_DIFF_SPLIT)
         {
         waitUpdateAsyncComplete();
-        _diff_nb_split = _clip(nb_split, 1, DiffBuffBase::MAX_NB_SUBFRAME);
+        _diff_nb_split = _clip(nb_split, 1, DiffBuffBase::MAX_NB_SUBFRAME);        
         statsReset();
+        resync();
         }
 
 
@@ -570,11 +579,23 @@ public:
     * Remark: calling this method reset the statistics.
     **/
     void setLateStartRatio(double ratio = ILI9341_T4_DEFAULT_LATE_START_RATIO)
-    {
-        waitUpdateAsyncComplete();
+        {
+        waitUpdateAsyncComplete(); // no need to wait for sync. 
         _late_start_ratio = _clip(ratio, 0.0, 1.0);
         statsReset();
-    }
+        resync();
+        }
+
+
+
+    /**
+    * Force a re-synchronization with the screen scanline on the next frame upload. 
+    * This command has no effect when not in vsync mode (ie when vsync_spacing <= 0).
+    **/
+    void resync()
+        {
+        _late_start_ratio_override = true;
+        }
 
 
     /**
@@ -733,6 +754,7 @@ public:
         waitUpdateAsyncComplete();
         _diff_gap = _clip(gap,1,ILI9341_T4_NB_PIXELS);
         statsReset();
+        resync();
         }
 
 
@@ -1139,6 +1161,7 @@ private:
     volatile int _diff_gap;                     // gap when creating diffs.
     volatile int _vsync_spacing;                // update stategy / framerate divider. 
     volatile double _late_start_ratio;          // late start parameter (by how much we can miss the first sync line and still start the frame without waiting for the next refresh).
+    volatile bool _late_start_ratio_override;   // if true the next frame upload will wait for the scanline to start a next frame. 
     volatile uint16_t _compare_mask;             // the compare mask used to compare pixels when doing a diff
 
     DiffBuffBase * volatile  _diff1;             // first diff buffer
@@ -1222,7 +1245,14 @@ private:
     /** swap _fb1 and _fb2 */
     void _swapfb() { auto t = _fb1; _fb1 = _fb2; _fb2 = t; }
 
-
+    /** Compute the best number of subframes to use when using a dummy diff according to
+     * the current sync mode and orientation */
+    int _dummyDiffNbSplit() const
+        {
+        if (_vsync_spacing <= 0) return 1; // fastest mode since we do not care about sync
+        if ((_rotation == 0) || (_rotation == 2)) return ILI9341_T4_DUMMYDIFF_NBSLIP_VERT; // can use large value here
+        return ILI9341_T4_DUMMYDIFF_NBSLIP_HOR; // but not too large here. 
+        }
 
 
     /**********************************************************************************************************
