@@ -401,7 +401,7 @@ namespace ILI9341_T4
         {
         if (gap < 1) gap = 1;
         if (nb_split < 1) nb_split = 1;
-        if (nb_split > MAX_NB_SUBFRAME) nb_split = MAX_NB_SUBFRAME;
+        // if (nb_split > MAX_NB_SUBFRAME) nb_split = MAX_NB_SUBFRAME; // no limit for dummy diff !
         if ((_orientation < 0) || (orientation > 3)) orientation = 0;
         _orientation = orientation;
         _nbsubframe = nb_split;

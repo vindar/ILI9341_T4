@@ -57,7 +57,7 @@ namespace ILI9341_T4
 
         static const uint32_t MAX_WRITE = 32000;    // maximum number of bytes that can be written in a single instruction (to prevent DMA error with too large transfers). 
 
-        static const int MAX_NB_SUBFRAME = 10;      // maximum number of subframes allowed in a diff.
+        static const int MAX_NB_SUBFRAME = 16;      // maximum number of subframes allowed in a diff.
 
 
         /** Possible Diff orientations. Matching screen orientation values **/
