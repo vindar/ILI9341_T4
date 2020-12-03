@@ -1628,7 +1628,7 @@ private:
         }
 
 
-    uint8_t _readcommand8(uint8_t reg, uint8_t index = 0);
+    uint8_t _readcommand8(uint8_t reg, uint8_t index = 0, int timeout_ms = 10);
 
 
     void _writecommand_cont(uint8_t c) __attribute__((always_inline))

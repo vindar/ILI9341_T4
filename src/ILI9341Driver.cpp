@@ -1258,7 +1258,7 @@ namespace ILI9341_T4
     ***********************************************************************************************************/
 
 
-    uint8_t ILI9341Driver::_readcommand8(uint8_t c, uint8_t index)
+    uint8_t ILI9341Driver::_readcommand8(uint8_t c, uint8_t index, int timeout_ms)
         {
         // Bail if not valid miso
         if (_miso == 0xff) return 0;
@@ -1276,9 +1276,9 @@ namespace ILI9341_T4
         _maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(7));
         _pimxrt_spi->TDR = 0; // readdata
         // Now wait until completed.
-        wTimeout = 0xffff;
+        elapsedMillis ems; 
         uint8_t rx_count = 4;
-        while (rx_count && wTimeout)
+        while (rx_count && ((timeout_ms <= 0) || (ems < timeout_ms)))
             {
             if ((_pimxrt_spi->RSR & LPSPI_RSR_RXEMPTY) == 0)
                 {
@@ -1287,6 +1287,7 @@ namespace ILI9341_T4
                 }
             }
         _endSPITransaction();
+        if (rx_count) return 0; // timeout
         return r; // get the received byte... should check for it first...
         }
 
