@@ -21,10 +21,13 @@
 
 #pragma once
 
+
 #include "StatsVar.h"
 
 #include <Arduino.h>
 #include <math.h>
+
+
 
 
 namespace ILI9341_T4
@@ -48,53 +51,49 @@ namespace ILI9341_T4
     *
     * - DiffBuff      : diff using user-supplied memory.
     * - DiffBuffStatic: diff using static memory allocation.
-    * - DiffBuffDummy : diff without memory alloc holding only trivial diffs (used for vsync).
+    * - DiffBuffDummy : diff without memory alloc holding only trivial diffs.
     * 
     *******************************************************************************************/
     class DiffBuffBase
     {
     public:
 
-        static const uint32_t MAX_WRITE = 32000;    // maximum number of bytes that can be written in a single instruction (to prevent DMA error with too large transfers). 
+        static const int LX = 240;                  // framebuffer width in orientation 0
+        static const int LY = 320;                  // framebuffer height in orientation 0
+        static const int MAX_WRITE_LINE = 120;      // max number of lines to be written in a single operation.
+        static const int MIN_SCANLINE_SPACE = 8;    // min number of lines between the current write line and the current scanline
 
-        static const int MAX_NB_SUBFRAME = 16;      // maximum number of subframes allowed in a diff.
+        static_assert((LX & 3) == 0, "LX must be divisible by 4");
 
 
-        /** Possible Diff orientations. Matching screen orientation values **/
+        /** Framebuffer orientation**/
         enum
             {
-            TOP_TO_BOTTOM = 0,
-            LEFT_TO_RIGHT = 1,
-            BOTTOM_TO_TOP = 2,
-            RIGHT_TO_LEFT = 3
+            PORTRAIT_240x320 = 0,
+            LANDSCAPE_320x240 = 1,
+            PORTRAIT_240x320_FLIPPED = 2,
+            LANDSCAPE_320x240_FLIPPED = 3,
             };
 
 
         /**
         * Compute the diff between two framebuffers. Any previous diff is overwritten.
         *
-        * - fb_old       : the old framebuffer of size (lx,ly) with layout fb_old(i,j) = fb_old[i + j*lx].
+        * - fb_old       : the old framebuffer 
         * 
-        * - fb_new       : the new framebuffer of size (lx,ly) with layout fb_new(i,j) = fb_new[i + j*lx].
+        * - fb_new       : the new framebuffer 
         * 
-        * - lx, ly       : framebuffers size (width and height). Must mirror the screen size. 
+        * - fb_new_orientation  : orientation for the new frame_buffer 
+        *                         The old framebuffer must always be in orientation 0. 
         * 
-        * - orientation  : the diff can be split in multiple subframes in order to be uploaded to the screen 
-        *                  trialing the refresh scanline to prevent screen tearing. This parameter sets the 
-		*                  splitting to use for the subframes. This value should be equal to the rotation 
-        *                  parameter of the ILI9341 screen. 
-        * 
-        * - nb_split     : number of subframes to split the diff into (between 1 and MAX_NB_SUBFRAME). Higher 
-        *                  value will create slightly larger diffs but can also possibly help with vsync.
-        *
         * - gap          : number of consecutives identical pixels between the two framebuffers needed to break 
-        *                  the diff in two instructions. This value should be between 5 and 100. Lower values
+        *                  the diff in two instructions. This value should be between 4 and 20. Lower values
         *                  will create more accurate diffs (fewer identical pixels will be redrawn) but it will 
         *                  require more memory to store the diff. 
         * 
         * copy_over_old  : If true, the old buffer is overwritten at the same time as the diff is computed so 
 		*                  that when the method returns, the old buffer mirrors the new one. This is faster 
-        *                  than doing a diff followed by a memcpy()... 
+        *                  than doing a diff followed by a copyfb()... 
         *
         * compare_mask   : The default behaviour when creating a diff is to redraw every pixels that differ between 
         *                  framebuffers however it might be useful in some case to keep pixels if they have 'close'
@@ -110,31 +109,18 @@ namespace ILI9341_T4
 		*        when this happens, the diff returned is (partly) trivial and this will have a negative impact on 
 		*        the upload speed. For optimal speed, the diff buffer size/gap parameter should be chosen such that
 		*        a typical diff do not overflow... The printStats() method can be useful to find how much memory a 
-		*        diff typically use and thus dimension the buffer size and gap accordingly. Of course, the size of 
-		*        a typical diff will depend on how much changes occurs between frames but in most case, choosing 
-		*        gap=10 and a buffer size around 5K is a good starting point. 
+		*        diff typically use and thus dimension the buffer size and gap accordingly. The size of a typical 
+        *        diff will depend on how much changes occurs between frames but in most case, choosing  gap=10 and a 
+        *        buffer size around 5K is a good starting point. 
         **/
-        virtual void computeDiff(uint16_t* fb_old, const uint16_t* fb_new, int lx, int ly, int orientation, int nb_split, int gap, bool copy_new_over_old, uint16_t compare_mask) = 0;
-
+        virtual void computeDiff(uint16_t* fb_old, const uint16_t* fb_new, int fb_new_orientation, int gap, bool copy_new_over_old, uint16_t compare_mask) = 0;
 
 
         /**
-        * Return the number of subframes that this diff contains.
+        * Copy the new framebuffer over the old one (and rotate it to put it in orientation 0). 
         **/
-        virtual int nbSubFrame() const = 0;
-
-
-        /**
-        * Return the width of the framebuffer associated with this diff.
-        **/
-        virtual int width() const = 0;
-
-
-        /**
-        * Return the height of the framebuffer associated with this diff.
-        **/
-        virtual int height() const = 0;
-
+        static void copyfb(uint16_t* fb_old, const uint16_t* fb_new, int fb_new_orientation);
+            
 
         /**
         * Call this method to reinitialize the diff prior to the first call
@@ -143,40 +129,42 @@ namespace ILI9341_T4
         virtual void initRead() = 0;
 
 
-        /** readDiff() return values enumeration. */
-        enum
-            {
-            DIFF_END,           // we have reached the end of the diff. 
-            INSTRUCTION,        // an instruction has been put in (x,y, len)
-            NEW_SUBFRAME        // starting a new subframe
-            };
-
-
         /**
         * Read the next instruction in the diff.
+        * - 'x','y' and 'len' are used to store the next instruction. 
+        * - 'scanline' must contain the current position of the scanline
         * 
-        * - returns INSTRUCTION: in this case  x, y, len are updated to contain the 
-        *   instruction meaning: 
-        *    'copy the [len] next pixels starting from offset [x] + width()*[y]'
+        * returns 0 :  in this case  x, y to contain the start position and
+        *              len contains the number of pixels to write. 
         * 
-        * - returns NEW_SUBFRAME. the variables x,y,len are NOT changed but 
-        *   subFrameSyncTimes() can now be called to find the subframe relative
-        *   position. 
+        * returns a>0 : must wait until scanline reaches 'a' then call the 
+        *               method again to get the instructions.
+        *               (x,y) are set to the same value that the next read
+        *               will return when timing is right but len is set to 0
         * 
-        * - returns DIFF_END. This means that the end of the diff has been reached 
-		*   and no more instruction are available. readDiff() should not be called 
-		*   anymore until calling initRead() or computeDiff() again.
+        * - returns a<0 : finished reading the diff. 
         **/
-        virtual int readDiff(int& x, int& y, int& len) = 0;
+        virtual int readDiff(int& x, int& y, int& len, int scanline) = 0;
 
 
-        /**
-        * Return the normalized starting and ending position of the current subframe
-        * (during diff reading). 
-        **/
-        virtual void subFrameSyncTimes(double& start, double& end) = 0;
+
+
+    private:
+        
+        static void _copy_rotate_0(uint16_t* fb_dest, const uint16_t* fb_src);           
+
+        static void _copy_rotate_90(uint16_t* fb_dest, const uint16_t* fb_src);        
+
+        static void _copy_rotate_180(uint16_t* fb_dest, const uint16_t* fb_src);
+           
+        static void _copy_rotate_270(uint16_t* fb_dest, const uint16_t* fb_src);
+           
 
     };
+
+
+
+
 
 
 
@@ -184,71 +172,54 @@ namespace ILI9341_T4
     /******************************************************************************************
     * Class used to compute the "diff" between 2 framebuffers.
     *
-    * The memory for holding the diff is allocated by the user and is passed to the object a 
+    * The memory for holding the diff is allocated by the user and is passed to the object a
     * construction time.
     *
-    * PERFORMANCE: On teensy 4.1, for framebuffers of size 320x240. It takes around 1ms to 
-    * compute a diff when both framebuffers are located in DMAMEM and around 700us when they 
-    * are in DTCM. This means that computing the diff consumes about 5% of a frame period at 60FPS. 
-    * So there is still plenty of CPU compute time available to generate the frame...
+    * PERFORMANCE: On teensy 4.1, for framebuffers of size 320x240. It takes around 1ms to
+    * compute a diff. This means that computing the diff consumes around 5-10% of a frame period 
+    * at 60FPS (but still leaves around 15ms to generate each frame).
     *******************************************************************************************/
     class DiffBuff : public DiffBuffBase
     {
 
     public:
 
-
         /**
-        * Constructor. Set the buffer and its buffer size.
-        * sizebuf should not be too small (at least PADDING but say 1K to be sure).
+        * Constructor. Set the buffer (and its size).
+        * sizebuf should not be too small (at least MIN_BUFFER_SIZE but say 1K to be useful).
         **/
-        DiffBuff(uint8_t* buffer, size_t sizebuf) : _tab(buffer), _sizebuf(sizebuf - PADDING), _posw(0), _posr(0), _nbsubframe(0), _stride(0), _height(0), _scale(1),  _r_cont(false)
+        DiffBuff(uint8_t* buffer, size_t sizebuf) : DiffBuffBase(), _tab(buffer), _sizebuf(sizebuf - PADDING), _posw(0), _posr(0)
             {
-            if (_sizebuf > 0) _write_encoded(TAG_END);
-            _posw = 0;
+            _write_encoded(TAG_END);
             initRead();
-            statsReset();
             }
 
 
-        virtual void computeDiff(uint16_t* fb_old, const uint16_t* fb_new, int lx, int ly, int orientation, int nb_split, int gap, bool copy_new_over_old, uint16_t compare_mask) override;
-          
-
-        virtual int nbSubFrame() const override { return _nbsubframe; }
-
-
-        virtual int width() const override { return _stride*_scale; }
-
-
-        virtual int height() const  override { return _height; }
+        virtual void computeDiff(uint16_t* fb_old, const uint16_t* fb_new, int fb_new_orientation, int gap, bool copy_new_over_old, uint16_t compare_mask) override;
 
 
         virtual void initRead() override
             {
-            _posr = 0;
             _r_cont = false;
+            _posr = 0; 
+            _off = 0; 
             }
 
 
-        virtual int readDiff(int& x, int& y, int& len) override;
-
-
-        virtual void subFrameSyncTimes(double& start, double& end) override;
+        virtual int readDiff(int& x, int& y, int& len, int scanline) override;
 
 
         /**
         * Return the current size of the diff.
-        * Return the total size of the allocated buffer if full (or nearly full).
+        * (return the total size of the buffer in case of overflow).
         **/
-        uint32_t size() const { return (uint32_t)((_posw >= _sizebuf) ? (_sizebuf + PADDING) : _posw); }
-
+        int size() const { return ((_posw >= _sizebuf) ? (_sizebuf + PADDING) : _posw); }
 
 
         /************************************************************************
-        * STATISTICS. 
-        * 
-        * The methods can be useful to monitor resource use and optimize the diff
-        * parameters (memory size / gap / number of splits...). 
+        * STATISTICS.
+        *
+        * Methods used to monitor resource use and optimize the diff buffer size. 
         ************************************************************************/
 
 
@@ -259,7 +230,7 @@ namespace ILI9341_T4
 
 
         /**
-        * Return the number of diff computed (since the last call to statsReset()). 
+        * Return the number of diff computed (since the last call to statsReset()).
         **/
         uint32_t statsNbComputed() const { return _stats_size.count(); }
 
@@ -278,71 +249,49 @@ namespace ILI9341_T4
 
         /**
         * Return a StatsVar object containing statisitcs about the time
-        * it took to compute the diffs. 
+        * it took to compute the diffs.
         **/
-        StatsVar statsTime() const { return _stats_time;  }
+        ILI9341_T4::StatsVar statsTime() const { return _stats_time; }
+
 
         /**
         * Return a StatVar  object containing statisitcs about the size
-        * of the computed buffers. 
+        * of the computed buffers.
         **/
-        StatsVar statsSize() const { return _stats_size; }
+        ILI9341_T4::StatsVar statsSize() const { return _stats_size; }
 
 
         /**
         * Print all the statistics into a Stream object.
         **/
         void printStats(Stream* outputStream = &Serial) const;
-       
+
+
 
 
     private:
 
+        static const int        MIN_BUFFER_SIZE = 16;             // minimum buffer size
+        static const int        PADDING = 8;                      // reserved at end of buffer (in case of overflow)
+        static const uint32_t   TAG_END = (0x400000 - 1);         // tag at end of diff
+        static const uint32_t   TAG_WRITE_ALL = (0x400000 - 2);   // tag to write everything remaining
 
-        /************************************************************************
-        * This is private ! Move along !
-        *************************************************************************/
-
-        static const int PADDING = (17 * MAX_NB_SUBFRAME) + 12; // minimum size needed to accomodate all subframes.
-
-        static const int TRY_EXPAND_LOOP = 4;                   // number of times the inner loop in computeDiff() is expanded for speedup. 4 seems optimal... 
-        static_assert((TRY_EXPAND_LOOP > 0) && (TRY_EXPAND_LOOP <= 8), "TRY_EXPAND_LOOP must be between 1 and 8 !");
-
-        static const uint32_t TAG_END = (0x400000 - 1);         // tag at end of diff
-        static const uint32_t TAG_HEADER = (0x400000 - 2);      // tag that annonces a subframe header
-        static const uint32_t TAG_WRITE_ALL = (0x400000 - 3);   // tag meaning 'write everything from this point on for this subframe' (used when running out of buffer space).
-
-        uint8_t* const _tab;                // the buffer    
-        const int _sizebuf;                 // and its size (where we already substracted PADDING). 
+        uint8_t* const _tab;                // the buffer itself
+        const int _sizebuf;                 // and its size (with PADDING already substracted). 
 
         int _posw;                          // current position in the array (for writing)
         int _posr;                          // current position in the array (for reading)
-        int _nbsubframe;                    // number of subframe stored in the diffbuffer. 
-        int _stride;                        // the framebuffer stride ( = width)
-        int _height;                        // the framebuffer height
-        int _orientation;                   // the framebuffer orientation. 
-        int _scale;                         // either 1 or 2. Value (ie positions) in the diff buffer are mutliplied by this value when reading. 
 
-        /* member variables used when reading the diff */
-
-        int _frame_x, _frame_y, _frame_lx, _frame_ly; // info about the current frame (for reading).    
-        int _read_off = 0;                            // current offset in the subframe (for reading).
-
-        int _r_x, _r_y, _r_len;                       // current instruction (for reading)
-        bool _r_cont;                                 // true is (_r_x, _r_y_, _r_len) contain a valid instruction (for reading). 
-
-
-        /* member variables used for statistics */
+        int _r_x, _r_y, _r_len;             // current instruction (for reading)
+        bool _r_cont;                       // true is (_r_x, _r_y_, _r_len) contain a valid instruction (for reading). 
+        int _off;                           // current offset
 
         volatile uint32_t _stat_overflow;   // number of times a diff buffer overflowed
+        ILI9341_T4::StatsVar _stats_size;   // statistics on buffer size
+        ILI9341_T4::StatsVar _stats_time;   // statistics on compute times. 
 
-        StatsVar _stats_size;               // statistic on buffer size
-        StatsVar _stats_time;               // statistic on compute times. 
 
-
-        /**
-        * Read a value in the diff buffer
-        **/
+        /** Read a value */
         uint32_t _read_encoded() __attribute__((always_inline))
             {
             const uint8_t b = _tab[_posr++];
@@ -359,7 +308,7 @@ namespace ILI9341_T4
                     uint32_t r = (uint32_t)(b >> 2);
                     r += (((uint32_t)_tab[_posr++]) << 6);
                     r += (((uint32_t)_tab[_posr++]) << 14);
-                   return r;
+                    return r;
                     }
                 default: // single byte encoding
                     {
@@ -369,18 +318,8 @@ namespace ILI9341_T4
             }
 
 
-        /**
-        * Read a 'raw' instruction from the diff buffer.
-        * return false if we reached the end of the diff.
-        **/
-        int _readDiffRaw(int& x, int& y, int& len);
-
-
-        /**
-         * Write val in the diff buffer.
-         * WARNING : val MUST BE STRICTLY SMALLER THAN 2^22.
-        **/
-        void _write_encoded(uint32_t val) __attribute__((always_inline))
+        /** Write a value. WARNING : val MUST BE STRICTLY SMALLER THAN 2^22 */
+        void _write_encoded(uint32_t val)  __attribute__((always_inline))
             {
             if (val <= 127)
                 { // val is encoded with a single byte
@@ -403,54 +342,49 @@ namespace ILI9341_T4
             }
 
 
-        /**
-        * Write a [write,skip] sequence in the diff buffer.
-        **/
+        /** Write a [write,skip] sequence in the  buffer. */
         bool _write_chunk(uint32_t nbwrite, uint32_t nbskip)
-            {
+            {            
             if (_posw >= _sizebuf)
                 { // running out of memory buffer
                 _write_encoded(TAG_WRITE_ALL);
                 return false;
-                }
+                }                
             _write_encoded(nbwrite); // write remaining        
             _write_encoded(nbskip); // skip remaining
             return true;
             }
 
 
-        /**
-        * Compute size of subframe (trying to keep it multiple of TRY_EXPAND_LOOP).
-        **/
-        static int _getsplit(int l, int nb_split)
-            {
-            int u = l / (TRY_EXPAND_LOOP * nb_split);
-            return (TRY_EXPAND_LOOP * u);
-            }
+        /** templated version of computeDiff */
+        template<bool COPY_NEW_OVER_OLD, bool USE_MASK>
+        void _computeDiff(uint16_t* fb_old, const uint16_t* fb_new, int fb_new_orientation, int gap, uint16_t compare_mask);
 
 
-        /**
-        * templated version of computeDiff.
-        **/
-        template<bool COPY_NEW_OVER_OLD, typename T>
-        void _computeDiff(T * fb_old, const T * fb_new, int lx, int ly, int orientation, int nb_split, int gap, const T mask);
+        /** called when the src framebuffer is in orientation 0 */
+        template<bool COPY_NEW_OVER_OLD, bool USE_MASK>
+        void _computeDiff0(uint16_t* fb_old, const uint16_t* fb_new, int gap, uint16_t compare_mask);
 
 
-        /**
-        * write the diff of two framebuffers inside a sub-frame.
-        * templated on COPY_OVER_OLD parameter. 
-        **/
-        template<bool COPY_NEW_OVER_OLD, typename T>
-        void _computeSubFrame(T * fb_old, const T * fb_new, const int x, const int y, const int lx, const int ly, const int stride, const int gap, const T mask);
+        /** called when the src framebuffer is in orientation 1 */
+        template<bool COPY_NEW_OVER_OLD, bool USE_MASK>
+        void _computeDiff1(uint16_t* fb_old, const uint16_t* fb_new, int gap, uint16_t compare_mask);
 
 
-        /**
-        * as above, but templated also on EXPAND_LOOP value.
-        **/
-        template<bool COPY_NEW_OVER_OLD, int EXPAND_LOOP, typename T, bool USE_MASK>
-        void _computeSubFrame2(T* fb_old, const T* fb_new, const int x, const int y, const int lx, const int ly, const int stride, const int gap, const T mask);
+        /** called when the src framebuffer is in orientation 2 */
+        template<bool COPY_NEW_OVER_OLD, bool USE_MASK>
+        void _computeDiff2(uint16_t* fb_old, const uint16_t* fb_new, int gap, uint16_t compare_mask);
+
+
+        /** called when the src framebuffer is in orientation 3 */
+        template<bool COPY_NEW_OVER_OLD, bool USE_MASK>
+        void _computeDiff3(uint16_t* fb_old, const uint16_t* fb_new, int gap, uint16_t compare_mask);
+
 
     };
+
+
+
 
 
 
@@ -458,21 +392,15 @@ namespace ILI9341_T4
     /******************************************************************************************
     * Class used to compute the "diff" between 2 framebuffers.
     *
-    * Memory is statically alloacated. The buffer size is given as template parameter SIZEBUF.
-    *
-    * PERFORMANCE: On teensy 4.1, for framebuffers of size 320x240. It takes around 1ms to
-    * compute a diff when both framebuffers are located in DMAMEM and around 700us when they
-    * are in DTCM. This means that computing the diff consumes about 5% of a frame period at 60FPS.
-    * So there is still plenty of CPU compute time available to generate the frame...
+    * Memory is statically allocated. The buffer size is given as template parameter SIZEBUF.
     *******************************************************************************************/
     template<int SIZEBUF>
     class DiffBuffStatic : public DiffBuff
     {
 
-        static_assert(SIZEBUF > PADDING, "template parameter SIZEBUF too small !");
+        static_assert(SIZEBUF >= MIN_BUFFER_SIZE, "template parameter SIZEBUF too small !");
 
-
-        public:
+    public:
 
         /**
         * Constructor. Assign the static array as buffer.
@@ -491,66 +419,57 @@ namespace ILI9341_T4
 
 
 
+
     /******************************************************************************************
     * Class used to compute a "dummy" diff between 2 framebuffers.
     *
     * No memory is allocated. The diff constructed with this object is trivial in the sense that
-    * it will tell that every pixels should be rewritten... Yet, it is still useful because it 
-    * generates subframes splitting so it can be used to redraw a whole screen with vsync. 
+    * it will tell that every pixels should be rewritten...
     *******************************************************************************************/
     class DiffBuffDummy : public DiffBuffBase
     {
 
     public:
 
- 
-        DiffBuffDummy() : _nbsubframe(0), _stride(0), _height(0), _orientation(0), _curframe(0), _curline(-1)
+
+        /** ctor */
+        DiffBuffDummy() : DiffBuffBase(), _current_line(0)
             {
             }
 
 
-        virtual void computeDiff(uint16_t* fb_old, const uint16_t* fb_new, int lx, int ly, int orientation, int nb_split, int gap, bool copy_new_over_old, uint16_t compare_mask) override;
-
-
-        void computeDummyDiff(int lx, int ly, int orientation, int nb_split)
+        /** dummy diff, but copy if needed*/
+        virtual void computeDiff(uint16_t* fb_old, const uint16_t* fb_new, int fb_new_orientation, int gap, bool copy_new_over_old, uint16_t compare_mask) override
             {
-            computeDiff(nullptr, nullptr, lx, ly, orientation, nb_split, 0, false, 0);
+            if (copy_new_over_old)
+                { // still copy if requested. 
+                copyfb(fb_old, fb_new, fb_new_orientation);
+                }
+            initRead();
             }
 
 
-        virtual int nbSubFrame() const override { return _nbsubframe; }
-
-
-        virtual int width() const override { return _stride; }
-
-
-        virtual int height() const  override { return _height; }
+        /** for compatibility withg previous verisons */
+        void computeDummyDiff()
+            {
+            initRead();
+            }
 
 
         virtual void initRead() override
             {
-            _curframe = 0;
-            _curline = -1; 
+            _current_line = 0;
             }
 
 
-        virtual int readDiff(int& x, int& y, int& len) override;
+        virtual int readDiff(int& x, int& y, int& len, int scanline) override;
+        
 
 
-        virtual void subFrameSyncTimes(double& start, double& end) override;
+    public:
 
 
-    private:
-
-
-        int _nbsubframe;                    // number of subframe stored in the diffbuffer. 
-        int _stride;                        // the framebuffer stride ( = width)
-        int _height;                        // the framebuffer height
-        int _orientation;                   // the framebuffer orientation. 
-
-        int _curframe;                      // current frame
-        int _curline;                       // current line. 
-        int _frame_x, _frame_y, _frame_lx, _frame_ly; // info about the current frame
+        int _current_line; // index of the next line to be drawn. 
 
     };
 
@@ -558,6 +477,7 @@ namespace ILI9341_T4
 
 
 }
+
 
 
 /** end of file */
