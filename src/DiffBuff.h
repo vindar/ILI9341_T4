@@ -433,7 +433,7 @@ namespace ILI9341_T4
 
 
         /** ctor */
-        DiffBuffDummy() : DiffBuffBase(), _current_line(0)
+        DiffBuffDummy() : DiffBuffBase(), _current_line(0), _begin(0), _end(DiffBuffBase::LY)
             {
             }
 
@@ -445,20 +445,24 @@ namespace ILI9341_T4
                 { // still copy if requested. 
                 copyfb(fb_old, fb_new, fb_new_orientation);
                 }
+            _begin = 0;
+            _end = DiffBuffBase::LY;
             initRead();
             }
 
 
-        /** for compatibility withg previous verisons */
-        void computeDummyDiff()
+        /** create a diff that redraws every line in [begin, end[ */
+        void computeDummyDiff(int begin = 0, int end = DiffBuffBase::LY)
             {
+            _begin = (begin < 0) ? 0 : begin;
+            _end = (end > DiffBuffBase::LY) ? DiffBuffBase::LY : end;
             initRead();
             }
 
 
         virtual void initRead() override
             {
-            _current_line = 0;
+            _current_line = _begin;
             }
 
 
@@ -470,6 +474,8 @@ namespace ILI9341_T4
 
 
         int _current_line; // index of the next line to be drawn. 
+        int _begin;
+        int _end;
 
     };
 

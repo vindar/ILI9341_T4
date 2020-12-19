@@ -386,25 +386,22 @@ namespace ILI9341_T4
 
 
 
-
-
-
         int DiffBuffDummy::readDiff(int& x, int& y, int& len, int scanline)
             {
-            if (_current_line >= LY) return -1; // we are done. 
-            if (scanline >= LY)
-                { // scanline started drawing the new frame, go as fast as possible. 
+            if (_current_line >= _end) return -1; // we are done. 
+            if (scanline >= _end)
+                { // scanline after end of drawing, go as fast as possible. 
                 x = 0;
                 y = _current_line;
-                if (_current_line + MAX_WRITE_LINE <= LY)
+                if (_current_line + MAX_WRITE_LINE <= _end)
                     {
                     len = MAX_WRITE_LINE * LX;
                     _current_line += MAX_WRITE_LINE;
                     }
                 else
                     {
-                    len = (LY - _current_line) * LX;
-                    _current_line = LY;
+                    len = (_end - _current_line) * LX;
+                    _current_line = _end;
                     }
                 return 0;
                 }
@@ -412,7 +409,7 @@ namespace ILI9341_T4
             if (maxl < MIN_SCANLINE_SPACE)
                 { // we must wait a bit. 
                 const int l = _current_line + MIN_SCANLINE_SPACE;
-                return ((l < LY) ? l : LY);
+                return ((l < _end) ? l : _end);
                 }
             x = 0;
             y = _current_line;
