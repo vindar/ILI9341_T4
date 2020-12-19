@@ -317,6 +317,22 @@ namespace ILI9341_T4
         }
 
 
+    void ILI9341Driver::setScroll(int offset)
+        {
+        if (offset < 0)
+            {
+            offset += (((-offset) / ILI9341_T4_TFTHEIGHT) + 1) * ILI9341_T4_TFTHEIGHT;
+            }
+        offset = offset % 320;
+        waitUpdateAsyncComplete();
+        _beginSPITransaction(_spi_clock);
+        _writecommand_cont(ILI9341_T4_VSCRSADD);
+        _writedata16_cont(offset);
+        _writecommand_cont(ILI9341_T4_RAMWR); // must send RAMWR because two consecutive VSCRSADD command may stall 
+        _writecommand_last(ILI9341_T4_NOP);
+        _endSPITransaction();
+        }
+
 
 
     /**********************************************************************************************************
@@ -774,9 +790,11 @@ namespace ILI9341_T4
             { // Diff is empty
             if (_vsync_spacing > 0)
                 { // note the next time. 
-                const uint32_t t1 = micros() + _microToReachScanLine(0, true);
-                const uint32_t t2 = _timeframestart + (_vsync_spacing * _period);
-                const uint32_t tfs = ((_late_start_ratio_override) || (t1 > t2) || (t2 - t1 > (ILI9341_T4_MAX_VSYNC_SPACING+1)*_period)) ? t1 : t2;
+                uint32_t t1 = micros() + _microToReachScanLine(0, true);
+                uint32_t t2 = _timeframestart + (_vsync_spacing * _period);
+                if ((t1 - t2 < _period / 3) && (t2 - t1 < _period / 3)) { t1 = t2; }// same frame. 
+                uint32_t tfs = ((_late_start_ratio_override) || (t1 > t2) || (t2 - t1 > (ILI9341_T4_MAX_VSYNC_SPACING+1)*_period)) ? t1 : t2;
+                if (tfs < _timeframestart) tfs = t2;
                 _late_start_ratio_override = false;
                 _last_delta = (int)round(((double)(tfs - _timeframestart)) / (_period));  // number of refresh between this frame and the previous one. 
                 _timeframestart = tfs;
@@ -914,9 +932,11 @@ namespace ILI9341_T4
             _dmaObject[_spi_num] = nullptr;
             if (_vsync_spacing > 0)
                 { // note the next time. 
-                const uint32_t t1 = micros() + _microToReachScanLine(0, true);
-                const uint32_t t2 = _timeframestart + (_vsync_spacing * _period);
-                const uint32_t tfs = ((_late_start_ratio_override) || (t1 > t2) || (t2 - t1 > (ILI9341_T4_MAX_VSYNC_SPACING + 1) * _period)) ? t1 : t2;
+                uint32_t t1 = micros() + _microToReachScanLine(0, true);
+                uint32_t t2 = _timeframestart + (_vsync_spacing * _period);
+                if ((t1 - t2 < _period / 3) && (t2 - t1 < _period / 3)) { t2 = t1; }// same frame. 
+                uint32_t tfs = ((_late_start_ratio_override) || (t1 > t2) || (t2 - t1 > (ILI9341_T4_MAX_VSYNC_SPACING + 1) * _period)) ? t1 : t2;
+                if (tfs < _timeframestart) tfs = t2;
                 _late_start_ratio_override = false;
                 _last_delta = (int)round(((double)(tfs - _timeframestart)) / (_period));  // number of refresh between this frame and the previous one. 
                 _timeframestart = tfs;
@@ -930,7 +950,7 @@ namespace ILI9341_T4
             _dmaObject[_spi_num] = nullptr;
             _dma_state = ILI9341_T4_DMA_IDLE;
             if (_pcb) { (this->*_pcb)(); }
-            _pcb = nullptr; // remove it afterward.             
+            _pcb = nullptr; // remove it afterward.     
             return;
             }
 
@@ -1009,7 +1029,7 @@ namespace ILI9341_T4
             _slinitpos = _getScanLine(false);   // save initial scanline position
             _em_async = 0;                      // start the counter
             const uint32_t tfs = micros() + _microToReachScanLine(0, false);        // time when this frame will start being displayed on the screen. 
-            _last_delta = (int)round(((double)(tfs - _timeframestart)) / (_period));
+            _last_delta = (int)round(((double)(tfs - _timeframestart)) / (_period));           
             _timeframestart = tfs;
             }
 
@@ -1402,10 +1422,12 @@ namespace ILI9341_T4
 
         outputStream->printf("\n\n[Statistics]\n");
         outputStream->printf("- average framerate  : %.1f FPS  (%u frames in %ums)\n", statsFramerate(), statsNbFrames(), statsTotalTime());
-        outputStream->printf("- upload rate        : %.1f FPS\n", 1000000.0/_statsvar_uploadtime.avg());
+        if (diffUpdateActive()) 
+            outputStream->printf("- upload rate        : %.1f FPS  (%.2fx compared to full redraw)\n", 1000000.0/_statsvar_uploadtime.avg(), statsDiffSpeedUp());
+        else
+            outputStream->printf("- upload rate        : %.1f FPS\n", 1000000.0 / _statsvar_uploadtime.avg());
         outputStream->printf("- upload time / frame: "); _statsvar_uploadtime.print("us", "\n", outputStream);
         outputStream->printf("- CPU time / frame   : "); _statsvar_cputime.print("us", "\n", outputStream);
-        if (diffUpdateActive()) outputStream->printf("- estimated speedup  : %.1fx compared to full redraw\n", statsDiffSpeedUp());
         outputStream->printf("- pixels / frame     : "); _statsvar_uploaded_pixels.print("", "\n", outputStream);
         outputStream->printf("- transact. / frame  : "); _statsvar_transactions.print("", "\n", outputStream);
         if (_vsync_spacing > 0)

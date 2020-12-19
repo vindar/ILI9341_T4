@@ -62,7 +62,7 @@ namespace ILI9341_T4
 #define ILI9341_T4_DEFAULT_DIFF_GAP 6                // default gap for diffs (typ. between 4 and 50)
 #define ILI9341_T4_DEFAULT_LATE_START_RATIO 0.3      // default "proportion" of the frame admissible for late frame start when using vsync. 
 
-#define ILI9341_T4_TRANSACTION_DURATION 4           // number of pixels that could be uploaded during a typical CASET/PASET/RAWR sequence. 
+#define ILI9341_T4_TRANSACTION_DURATION 3           // number of pixels that could be uploaded during a typical CASET/PASET/RAWR sequence. 
 #define ILI9341_T4_RETRY_INIT 3                     // number of times we try initialization in begin() before returning an error. 
 #define ILI9341_T4_TFTWIDTH 240                     // screen dimension x (in default orientation 0)
 #define ILI9341_T4_TFTHEIGHT 320                    // screen dimension y (in default orientation 0)
@@ -73,7 +73,7 @@ namespace ILI9341_T4
 
 #define ILI9341_T4_MAX_VSYNC_SPACING 10             // maximum number of screen refresh between frames (for sync clock stability). 
 #define ILI9341_T4_IRQ_PRIORITY 128                 // priority at which we run the irqs (dma and pit timer).
-#define ILI9341_T4_MAX_DELAY_MICROSECONDS 100000    // maximum waiting time (0.1 second)
+#define ILI9341_T4_MAX_DELAY_MICROSECONDS 1000000    // maximum waiting time (1 second)
 
 #define ILI9341_T4_TOUCH_Z_THRESHOLD     400        // for touch
 #define ILI9341_T4_TOUCH_Z_THRESHOLD_INT 75         // same as https://github.com/PaulStoffregen/XPT2046_Touchscreen/blob/master/XPT2046_Touchscreen.cpp
@@ -289,18 +289,31 @@ public:
     ****************************************************************************************************/
 
 
-
     /**
     * Enter/exit sleep mode.
     **/
     void sleep(bool enable);
 
 
-
     /**
     * Invert the display colors.
     **/
     void invertDisplay(bool i);
+
+
+    /**
+    * Set the vertical scroll offset.
+    *
+    * Default value is 0 (no scroll). When an offset is set, the framebuffer is shifted vertically on 
+    * the screen by the given offset. This means that the following (hardware) mapping is performed:
+    * 
+    * - framebuffer line i  =>  drawn at scanline (i - offset) mod TFT_HEIGHT. 
+    * 
+    * offset can be any value (positive or negative) so that incrementing / decrementing it enables
+    * to scroll up or down continuously.
+    **/
+    void setScroll(int offset = 0);
+       
 
 
 
@@ -898,6 +911,8 @@ public:
 
 
 
+
+
     /***************************************************************************************************
     ****************************************************************************************************
     *
@@ -941,6 +956,14 @@ public:
 
 
     /**
+    * Return an object containing statistics about the time taken
+    * for uploading each frame. 
+    * !!! This does NOT count the time needed to create the diffs. !!!
+    **/
+    StatsVar statsUploadtimePerFrame() const { return _statsvar_uploadtime; }
+
+
+    /**
     * Return an object containing statistics about the number of pixels
     * uploaded per frame. 
     **/
@@ -966,17 +989,13 @@ public:
     * compared to full updates. This estimate is only about the time needed to upload 
     * the pixels without taking vsync into account. 
     * 
-    * This value is computed by looking at the average number of pixels uploaded per frame
-    * together with the average number of transactions per frame (with each transaction 
-    * counting as ILI9341_T4_TRANSACTION_DURATION pixel upload) and then comparing it with
-    * the number of pixels in a frame. 
-    * 
-    * A small value is good :-)
+    * If the value returned is smaller than one. It means that there is not real 
+    * benefits to using differential updates so it should be disabled. 
     **/
     double statsDiffSpeedUp() const
         {
         if ((!diffUpdateActive())|| (_statsvar_transactions.count() == 0)) return 1.0;
-        return ILI9341_T4_NB_PIXELS/((ILI9341_T4_TRANSACTION_DURATION * _statsvar_transactions.avg()) + (_statsvar_uploaded_pixels.avg()));
+        return ((double)(ILI9341_T4_NB_PIXELS * 16)) / ((double)_spi_clock) * (1000000.0 / _statsvar_uploadtime.avg());
         }
 
 
