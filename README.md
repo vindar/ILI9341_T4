@@ -98,9 +98,9 @@ There are 4 possible orientations for the display (matching, of course, to the f
 
 Pixel(i , j) = framebuffer[ LX * j  + i]  with 0 <= i < LX and 0 <= j < LY. 
 
-The "natural" orientation is `orientation=0` for which the pixels in the framebuffer are ordered the same way that they are refreshed on the screen. **This orientation will always give the best possible upload rate and should be used whenever possible... Really !**.
+The "natural" orientation is `orientation=0` for which the pixels in the framebuffer are ordered the same way that they are refreshed on the screen. This orientation will give the best possible upload rate and should be preferred.
 
-To set the screen orientation, use the method `setrotation()`:
+To set the screen orientation, use the method `setRotation()`:
 ```
 tft.setRotation(0); // use the most efficient orientation (portrait mode)
 ```
@@ -128,7 +128,7 @@ The **framerate** on the other hand is the number of times the screen content is
 
 In order to prevent this, the driver keeps track of the refresh times and tries to upload pixels trailing behind the scanline. However, if the upload rate is much slower than the refresh rate, then the scanline will still eventually catch up with the pixels being uploaded and screen tearing will occur. In order to get prevent visual artifact and insure a stable framerate, the following two conditions must be met:
 
-[1] The time to upload a whole frame must take no longer than (slightly less than) 2 refresh periods. 
+[1] The time to upload a whole frame must take no longer than 2 refresh periods. 
 
 [2] The frame rate must divide the refresh rate (ie framerate=refreshrate/N for some positive integer N). 
 
@@ -148,7 +148,7 @@ Now, we must tell the driver the actual framerate/vsync method that we want. Thi
 
 - **`vsync_spacing = N > 0`**. Synchronize uploads with screen refreshes to mitigate screen tearing. Perform upload every N screen refreshes so that the actual framerate is equal to framerate=refreshrate/N (provided, of course, that frames are pushed fast enough to the driver to achieve this rate).
 
-In practice, `vsync_spacing=-1` will give the fastest apparent framerate but will usually provide very poor visual quality. Setting `vsync_spacing=-0` will give slightly better results (but still with screen tearing) and still leaves the responsibility to the user of setting a stable framerate... In most cases, the best choice is to set `vsync_spacing = 2` and then adjust the refresh rate so that upload can be performed at refreshrate/2 FPS... Using `vsync_spacing = 1` should be reserved for drawing very simple frames which can be uploaded very quickly onto the screen (in less than a refresh period). Using `vsync_pacing >= 3` can be used to artificially reduce the framerate but I do not know of a compelling reason to do so. 
+In practice, `vsync_spacing=-1` will give the fastest apparent framerate but will usually provide very poor visual quality. Setting `vsync_spacing=-0` will give slightly better results (but still with screen tearing) and still leaves the responsibility to the user of setting a stable framerate by pushing frames at regular intervals... In most cases, the best choice is to set `vsync_spacing = 2` and then adjust the refresh rate so that upload can be performed at refreshrate/2 FPS... Using `vsync_spacing = 1` should be reserved for drawing very simple frames which can be uploaded very quickly onto the screen (in less than a refresh period). Using `vsync_pacing >= 3` can be used to artificially reduce the framerate but I do not know of a really compelling reason to do so. 
 
 So, we select the framerate and vsync mode with:
 ```
@@ -219,20 +219,18 @@ Complete examples can be found in the `/examples` sub-directory of the library.
 
 ## Tips and tricks
 
-- **The `setDiffGap()` method.** When using differential updates, the driver tries to be smart and find a compromise between skipping unchanged pixels but also not fragmenting spi transactions  too much because issuing a re-positioning commands also takes times. To adjust this behaviour, the `setDiffGap()` can be used to specify the number of consecutive unchanged pixels required to break a spi transaction. Typical value should range between 4 and 40. Smaller gaps can provide a speed bump but will require larger diff buffers (possibly up to 10K when using a gap of size 4). It is possible to get statistics on diff buffer memory consumption with the `.printStats()` method applied directly to the diff buffer (not to the tft object). If the diff buffer overflows too often, its size should be increased. 
-
-- **`The setNbFrames()` method.** In vsynced mode, the framebuffer is broken into subframes whose uploads are timed to avoid the scanline and prevent screen tearing. The default number of subframes is 6 and should be good in most cases. Still, it can be useful to adjust this value with the `setNbSplit` method. In particular, when using portrait mode 0 or 2, increasing the number of subframe to 16 can be advantageous (but beware using a larger number of subframe will also slightly increase diff logs sizes). 
+- **The `setDiffGap()` method.** When using differential updates, the driver tries to be smart and find a compromise between skipping unchanged pixels but also not fragmenting spi transactions  too much because issuing a re-positioning commands also takes times. To adjust this behaviour, the `setDiffGap()` can be used to specify the number of consecutive unchanged pixels required to break a spi transaction. Typical value should range between 3 and 40. Smaller gaps can provide a speed bump but will require larger diff buffers (possibly up to 10K when using a gap of size 4). It is possible to get statistics on diff buffer memory consumption with the `.printStats()` method applied directly to the diff buffer (not to the tft object). If the diff buffer overflows too often, its size should be increased. 
 
 - **Disabling differential update for a given frame**. Differential updates are beneficial in most cases unless almost all the pixels change in a frame. In this case, there will be no increase in upload speed. Yet, calculating the diff log takes around 1ms of the MCU compute time per frame. When using two diff buffers, this computation is done during async. update so it should not slow down the framerate but it can still be beneficial to skip this computation if you know for sure that the diff will be mostly trivial. You can tell the driver to upload a given frame as is, without computing the diff, by setting the second (facultative) parameter in the update method to true:
 ```
-tft.update(fb, true); // fb will be uploaded without computing the diff (but just this one). 
+tft.update(fb, true); // fb will be uploaded without computing the diff (but just for this upload). 
 ```
 
 - **Printing statistics**. Several methods are available to provide detailed stats about the performance of the driver. All these methods take the form `statsXXX`. Also, there is a very convenient method for debugging/optimization call `printStats()` (same for diff buffers) that will print out all the statistics of the driver onto a given stream (Serial by default). 
 
 - **Using the touchscreen**. If a touchscreen is present and connected to the same spi bus, then additional methods become available to read the touch screen status. `lastTouched()` will return the number of milliseconds elapsed since the screen was last touched (only available if the touch_irq pin is set). The `readTouch()` method will return the currently touched position and pressure. Finally, `setTouchRange()` method can be used to set a mapping from touch coordinates to screen coordinates if needed.
 
-- **diff buffer and memory allocation**. The library performs no memory allocation itself and not does it use an excessive stack memory either. All the memory needed (framebuffer and diff buffers) are to be provided by the user which keeps complete control over memory allocation. For diff buffers, the StaticDiffBuffer<> template class provides a convenient way to create diff buffers with statically allocated memory. However, if more control is needed, one can use the base DiffBuffer class which is similar but requires the user to provide the memory space at construction time. See the file `DiffBuff.h` for additional details. 
+- **diff buffer and memory allocation**. The library performs no memory allocation. All the memory needed (framebuffer and diff buffers) are to be provided by the user which keeps complete control over memory allocation. For diff buffers, the `StaticDiffBuffer<>` template class provides a convenient way to create diff buffers with statically allocated memory. However, if more control is needed, one can use the base `DiffBuffer` class which is similar but requires the user to provide the memory space at construction time. See the file `DiffBuff.h` for additional details. 
 
 - **Getting for information, additional methods**. There are several other methods that can be used to fine-tune the driver performance. In particular: `resync()`, `setDiffCompareMask`, `setLateFrameRatio()`... Details about these methods (and more) can be found in the header file [ILI9341Driver.h](https://github.com/vindar/ILI9341_T4/blob/main/src/ILI9341Driver.h). Each method has a detailed docstring above its declaration explaining its purpose.
 
