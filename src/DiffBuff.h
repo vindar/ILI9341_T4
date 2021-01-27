@@ -190,6 +190,7 @@ namespace ILI9341_T4
         **/
         DiffBuff(uint8_t* buffer, size_t sizebuf) : DiffBuffBase(), _tab(buffer), _sizebuf(sizebuf - PADDING), _posw(0), _posr(0)
             {
+            statsReset();
             _write_encoded(TAG_END);
             initRead();
             }
