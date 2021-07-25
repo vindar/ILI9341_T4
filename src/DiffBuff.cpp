@@ -282,14 +282,14 @@ namespace ILI9341_T4
                 }
 
             _write_encoded(TAG_END);
-            if (size() >= _sizebuf)
+            if ((unsigned int)size() >= (unsigned int)_sizebuf)
                 { // diff is full so copy from new to old may not have been completed...
                 if (copy_new_over_old) copyfb(fb_old, fb_new, fb_new_orientation); // copy again. 
                 }
             initRead();
             // done. record stats
             _stats_size.push(size());
-            if (size() >= _sizebuf) _stat_overflow++;
+            if ((unsigned int)size() >= (unsigned int)_sizebuf) _stat_overflow++;
             _stats_time.push(em);
             }
 
