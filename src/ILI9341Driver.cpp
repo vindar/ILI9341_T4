@@ -195,9 +195,8 @@ namespace ILI9341_T4
                 digitalWrite(_rst, LOW);
                 delay(20);
                 digitalWrite(_rst, HIGH);
-                delay(150);
                 }
-           
+            delay(150);
             _beginSPITransaction(_spi_clock / 4); // quarter speed for setup ! 
             const uint8_t* addr = init_commands;
             while (1)
