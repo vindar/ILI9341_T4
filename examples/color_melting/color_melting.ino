@@ -2,14 +2,73 @@
 *
 * ILI9341_T4 library example. vsync and screen tearing demo.
 *
+* This example demonstrates the effect of vsync on screen tearing.
+* At each frame, a disk is drawn, alternatingly in red and blue.
+*
+* When vsync is activated and the framerate becomes high enough, the
+* disk appear to be solid violet ! When vsync is disabled, screen
+* tearing becomes apparent...
 ********************************************************************/
 
-#include "Arduino.h"
-#include "ILI9341Driver.h"
+#include <Arduino.h>
+#include <ILI9341_T4.h>
+
+
+
+// DEFAULT WIRING USING SPI 0 ON TEENSY 4/4.1
+// Recall that DC must be on a valid cs pin !!! 
+#define PIN_SCK     13      // mandatory 
+#define PIN_MISO    12      // mandatory
+#define PIN_MOSI    11      // mandatory
+#define PIN_DC      10      // mandatory
+#define PIN_CS      9       // mandatory (but can be any digital pin)
+#define PIN_RESET   6       // could be omitted (set to 255) yet it is better to use (any) digital pin whenever possible.
+#define PIN_BACKLIGHT 255   // optional. Set this only if the screen LED pin is connected directly to the Teensy 
+#define PIN_TOUCH_IRQ 255   // optional. Set this only if touch is connected on the same spi bus (otherwise, set it to 255)
+#define PIN_TOUCH_CS  255   // optional. Set this only if touch is connected on the same spi bus (otherwise, set it to 255)
+
+
+// ALTERNATE WIRING USING SPI 1 ON TEENSY 4/4.1
+// Recall that DC must be on a valid cs pin !!! 
+
+//#define PIN_SCK     27      // mandatory 
+//#define PIN_MISO    1       // mandatory
+//#define PIN_MOSI    26      // mandatory
+//#define PIN_DC      0       // mandatory
+//#define PIN_CS      30      // mandatory (but can be any digital pin)
+//#define PIN_RESET   29      // could be omitted (set to 255) yet it is better to use (any) digital pin whenever possible.
+//#define PIN_BACKLIGHT 255   // optional. Set this only if the screen LED pin is connected directly to the Teensy 
+//#define PIN_TOUCH_IRQ 255   // optional. Set this only if touch is connected on the same spi bus (otherwise, set it to 255)
+//#define PIN_TOUCH_CS  255   // optional. Set this only if touch is connected on the same spi bus (otherwise, set it to 255)
+
+
+
+// 30MHz SPI. Can do much better with short wires
+#define SPI_SPEED       30000000
+
+
+// the screen driver object
+ILI9341_T4::ILI9341Driver tft(PIN_CS, PIN_DC, PIN_SCK, PIN_MOSI, PIN_MISO, PIN_RESET, PIN_TOUCH_CS, PIN_TOUCH_IRQ);
+
+
+// 2 diff buffers with about 6K memory each
+// (in this simple case, only 1K memory buffer would be enough). 
+ILI9341_T4::DiffBuffStatic<6000> diff1;
+ILI9341_T4::DiffBuffStatic<6000> diff2;
+
+
+// framebuffers
+uint16_t internal_fb[320 * 240];     // used for buffering
+uint16_t fb[320 * 240];              // main framebuffer we draw onto.
+
 
 
 // screen dimension, depending on the mode. 
 int LX, LY;
+
+
+/********************************************************************
+********************************************************************/
 
 
 /** fill a framebuffer with a given color */
@@ -45,45 +104,9 @@ void drawDisk(uint16_t* fb, double x, double y, double r, uint16_t col)
 
 
 /********************************************************************
-* This example demonstrates the effect of vsync on screen tearing.
-* At each frame, a disk is drawn, alternatingly in red and blue.
-*
-* When vsync is activated and the framerate becomes high enough, the
-* disk appear to be solid violet ! When vsync is disabled, screen
-* tearing becomes apparent...
 ********************************************************************/
 
 
-// 30MHz SPI. We can do much better with short wires
-#define SPI_SPEED		30000000
-
-
-// set the pins here (I use SPI1)
-// ***  Recall that DC must be on a valid cs pin !!! ***
-#define PIN_SCK			27
-#define PIN_MISO		1
-#define PIN_MOSI		26
-#define PIN_DC			0
-#define PIN_RESET		29
-#define PIN_CS			30
-#define PIN_BACKLIGHT   28  // 255 if not connected to MCU. 
-#define PIN_TOUCH_IRQ	32  // 255 if not used (or not on the same spi bus)
-#define PIN_TOUCH_CS	31  // 255 if not used (or not on the same spi bus)
-
-
-// the screen driver object
-ILI9341_T4::ILI9341Driver tft(PIN_CS, PIN_DC, PIN_SCK, PIN_MOSI, PIN_MISO, PIN_RESET, PIN_TOUCH_CS, PIN_TOUCH_IRQ);
-
-
-// 2 diff buffers with about 6K memory each
-// (in this simple case, only 1K memory buffer would be enough). 
-ILI9341_T4::DiffBuffStatic<6000> diff1;
-ILI9341_T4::DiffBuffStatic<6000> diff2;
-
-
-// framebuffers
-uint16_t internal_fb[320 * 240];     // used for buffering
-uint16_t fb[320 * 240];              // main framebuffer we draw onto.
 
 
 void setup()

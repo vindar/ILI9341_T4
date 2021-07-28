@@ -12,10 +12,15 @@
     * Connect TFT backlight to BACKLIGHT_PIN.
 
   MIT license, all text above must be included in any redistribution
+
+ https://github.com/zkarcher/demosauce
+
+
+  Adapted from  https://github.com/KurtE/ILI9341_t3n/tree/master/examples/DemoSauce
+  to use the ILI9341_T4 library
  ****************************************************/
 
- // https://github.com/zkarcher/demosauce
-
+ 
 #include "ILI9341Wrapper.h"
 
 #include "FrameParams.h"
@@ -41,17 +46,34 @@
 
 
 
-#define PIN_SCK			27
-#define PIN_MISO		1
-#define PIN_MOSI		26
-#define PIN_DC			0  // !!! DC must be a valid cs pin for the spi bus : here for SPI1. !!!
-#define PIN_RESET		29
-#define PIN_CS			30
+// DEFAULT WIRING USING SPI 0 ON TEENSY 4/4.1
+// Recall that DC must be on a valid cs pin !!! 
+#define PIN_SCK     13      // mandatory 
+#define PIN_MISO    12      // mandatory
+#define PIN_MOSI    11      // mandatory
+#define PIN_DC      10      // mandatory
+#define PIN_CS      9       // mandatory (but can be any digital pin)
+#define PIN_RESET   6       // could be omitted (set to 255) yet it is better to use (any) digital pin whenever possible.
+#define PIN_BACKLIGHT 255   // optional. Set this only if the screen LED pin is connected directly to the Teensy 
+#define PIN_TOUCH_IRQ 255   // optional. Set this only if touch is connected on the same spi bus (otherwise, set it to 255)
+#define PIN_TOUCH_CS  255   // optional. Set this only if touch is connected on the same spi bus (otherwise, set it to 255)
 
-#define PIN_BACKLIGHT   28  
 
-#define PIN_TOUCH_IRQ	32  // 255 if not used (or not on the same spi bus)
-#define PIN_TOUCH_CS	31  // 255 if not used (or not on the same spi bus)
+// ALTERNATE WIRING USING SPI 1 ON TEENSY 4/4.1
+// Recall that DC must be on a valid cs pin !!! 
+
+//#define PIN_SCK     27      // mandatory 
+//#define PIN_MISO    1       // mandatory
+//#define PIN_MOSI    26      // mandatory
+//#define PIN_DC      0       // mandatory
+//#define PIN_CS      30      // mandatory (but can be any digital pin)
+//#define PIN_RESET   29      // could be omitted (set to 255) yet it is better to use (any) digital pin whenever possible.
+//#define PIN_BACKLIGHT 255   // optional. Set this only if the screen LED pin is connected directly to the Teensy 
+//#define PIN_TOUCH_IRQ 255   // optional. Set this only if touch is connected on the same spi bus (otherwise, set it to 255)
+//#define PIN_TOUCH_CS  255   // optional. Set this only if touch is connected on the same spi bus (otherwise, set it to 255)
+
+
+
 
 #define MIC_PIN         14  // optional. 
 
@@ -152,7 +174,7 @@ void setup()
     tft.setDiffGap(3); // very small gap !
     tft.setRefreshRate(120); // 120hz refresh rate
 
-    tft.setVSyncSpacing(0); // max speed (may also try 1 = locked 120fps and 2 = locked 60fps
+    tft.setVSyncSpacing(1); // fps lock at max 120hz (may also try 0 = max fps and 2 = locked at 60fps
 
     if (PIN_BACKLIGHT != 255)
         {

@@ -4,17 +4,65 @@
 *
 ********************************************************************/
 
-#include "ILI9341Driver.h"
+#include <Arduino.h>
+#include <ILI9341_T4.h>
+
+
+// DEFAULT WIRING USING SPI 0 ON TEENSY 4/4.1
+// Recall that DC must be on a valid cs pin !!! 
+#define PIN_SCK     13      // mandatory 
+#define PIN_MISO    12      // mandatory
+#define PIN_MOSI    11      // mandatory
+#define PIN_DC      10      // mandatory
+#define PIN_CS      9       // mandatory (but can be any digital pin)
+#define PIN_RESET   6       // could be omitted (set to 255) yet it is better to use (any) digital pin whenever possible.
+#define PIN_BACKLIGHT 255   // optional. Set this only if the screen LED pin is connected directly to the Teensy 
+#define PIN_TOUCH_IRQ 255   // optional. Set this only if touch is connected on the same spi bus (otherwise, set it to 255)
+#define PIN_TOUCH_CS  255   // optional. Set this only if touch is connected on the same spi bus (otherwise, set it to 255)
+
+
+// ALTERNATE WIRING USING SPI 1 ON TEENSY 4/4.1
+// Recall that DC must be on a valid cs pin !!! 
+
+//#define PIN_SCK     27      // mandatory 
+//#define PIN_MISO    1       // mandatory
+//#define PIN_MOSI    26      // mandatory
+//#define PIN_DC      0       // mandatory
+//#define PIN_CS      30      // mandatory (but can be any digital pin)
+//#define PIN_RESET   29      // could be omitted (set to 255) yet it is better to use (any) digital pin whenever possible.
+//#define PIN_BACKLIGHT 255   // optional. Set this only if the screen LED pin is connected directly to the Teensy 
+//#define PIN_TOUCH_IRQ 255   // optional. Set this only if touch is connected on the same spi bus (otherwise, set it to 255)
+//#define PIN_TOUCH_CS  255   // optional. Set this only if touch is connected on the same spi bus (otherwise, set it to 255)
+
+
+
+// 30MHz SPI. Can do much better with short wires
+#define SPI_SPEED       30000000
+
+
+// the screen driver object
+ILI9341_T4::ILI9341Driver tft(PIN_CS, PIN_DC, PIN_SCK, PIN_MOSI, PIN_MISO, PIN_RESET, PIN_TOUCH_CS, PIN_TOUCH_IRQ);
+
+
+// 2 diff buffers with about 6K memory each
+ILI9341_T4::DiffBuffStatic<6000> diff1;
+ILI9341_T4::DiffBuffStatic<6000> diff2;
+
+// screen size in portrait mode
+#define LX  240
+#define LY  320
+
+// our framebuffers
+uint16_t internal_fb[LX * LY];     // used by the library for buffering
+uint16_t fb[LX * LY];              // the main framebuffer we draw onto.
+
+
 
 
 
 /********************************************************************
 * code for drawing colored balls.
 ********************************************************************/
-
-// drawing size in portrait mode
-#define LX  240
-#define LY  320
 
 
 /** fill a framebuffer with a given color*/
@@ -90,6 +138,14 @@ struct Ball
 
 
 
+
+
+
+// our 99 luftballons
+Ball balls[99];
+
+
+
 /********************************************************************
 * Main display code.
 *
@@ -99,41 +155,6 @@ struct Ball
 * Here, we get around 100 FPS (without vsync) and a stable 60 FPS with
 * vsync (screen tearing free).
 ********************************************************************/
-
-
-// 30MHz SPI. We could do much better with short wires
-#define SPI_SPEED		30000000
-
-
-// set the pins here (here I use SPI1)
-// ***  Recall that DC must be on a valid cs pin !!! ***
-#define PIN_SCK			27
-#define PIN_MISO		1
-#define PIN_MOSI		26
-#define PIN_DC			0
-#define PIN_RESET		29
-#define PIN_CS			30
-#define PIN_BACKLIGHT   28  // 255 if not connected to MCU. 
-#define PIN_TOUCH_IRQ	32  // 255 if not used (or not on the same spi bus)
-#define PIN_TOUCH_CS	31  // 255 if not used (or not on the same spi bus)
-
-
-// the screen driver object
-ILI9341_T4::ILI9341Driver tft(PIN_CS, PIN_DC, PIN_SCK, PIN_MOSI, PIN_MISO, PIN_RESET, PIN_TOUCH_CS, PIN_TOUCH_IRQ);
-
-
-// 2 diff buffers with about 6K memory each
-ILI9341_T4::DiffBuffStatic<6000> diff1;
-ILI9341_T4::DiffBuffStatic<6000> diff2;
-
-
-// our framebuffers
-uint16_t internal_fb[LX * LY];     // used by the library for buffering
-uint16_t fb[LX * LY];              // the main framebuffer we draw onto.
-
-
-// our 99 luftballons
-Ball balls[99];
 
 
 void setup()
@@ -146,14 +167,12 @@ void setup()
         delay(1000);
         }
 
-
     tft.setRotation(0);                 // portrait mode 240 x320
 
     tft.setFramebuffers(internal_fb);   // set 1 internal framebuffer -> activate double buffering.
 
     tft.setDiffBuffers(&diff1, &diff2); // set the 2 diff buffers => activate differential updates. 
     tft.setDiffGap(4);                  // use a small gap for the diff buffers
-
 
     // Below, vsync_spacing = 2 means we want 120/2=60Hz fixed framerate with vsync enabled.
     // Here, at 30mhz spi, we could even choose vsync_spacing = 1 and refresh rate = 90hz
