@@ -201,7 +201,7 @@ public:
     *--------------------------------------------------------------------------------------------
     * 
     * - The touch_cs (and touch_irq) pins are optional. They should be set if and only  if the 
-	*   XPT2048 touchscreen is present AND ON THE SAME SPI BUS THAT DRIVES THE DISPLAY.
+    *   XPT2048 touchscreen is present AND ON THE SAME SPI BUS THAT DRIVES THE DISPLAY.
     * 
     * --------------------------------------------------------------------------------------------
     * THE SPI BUS SHOULD BE DEDICATED TO THE SCREEN (EXCEPT FOR THE POSSIBLE XPT2048 TOUCHSCREEN)
@@ -491,7 +491,7 @@ public:
     *                      tearing nor framerate stability. 
     *
     * - vsync_spacing > 0. The updates are synchronized with the screen refresh. This approach has 
-	*                      two advantages:
+    *                      two advantages:
     *                      1) It prevents screen tearing.
     *                      2) It insure a constant framerate.
     *
@@ -506,7 +506,7 @@ public:
     *
     * NOTE 1: In order to insure that screen tearing cannot occur, the upload must be done fast 
     *         enough so that the refresh scanline does not catch up with the pixels being drawn. 
-	*         This is true when the update takes slightly less than  2 refresh periods.
+    *         This is true when the update takes slightly less than  2 refresh periods.
     *         For this reason, vsync_spacing = 2  should be the optimal choice in most case. 
     *         However, if the diff is simple enough so that the frame upload rate is faster than 
     *         the refresh rate and if also the frames can be generated fast enough,  then it may 

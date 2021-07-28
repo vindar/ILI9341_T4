@@ -1530,9 +1530,9 @@ namespace ILI9341_T4
             }
         else
             {
-            data[0] = data[1] = data[2] = data[3] = 0;	// Compiler warns these values may be used unset on early exit.
+            data[0] = data[1] = data[2] = data[3] = 0;  // Compiler warns these values may be used unset on early exit.
             }
-        data[4] = _pspi->transfer16(0xD0 /* Y */) >> 3;	// Last Y touch power down
+        data[4] = _pspi->transfer16(0xD0 /* Y */) >> 3; // Last Y touch power down
         data[5] = _pspi->transfer16(0) >> 3;
         digitalWrite(_touch_cs, HIGH);
         _pspi->endTransaction();

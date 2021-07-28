@@ -92,7 +92,7 @@ namespace ILI9341_T4
         *                  require more memory to store the diff. 
         * 
         * copy_over_old  : If true, the old buffer is overwritten at the same time as the diff is computed so 
-		*                  that when the method returns, the old buffer mirrors the new one. This is faster 
+        *                  that when the method returns, the old buffer mirrors the new one. This is faster 
         *                  than doing a diff followed by a copyfb()... 
         *
         * compare_mask   : The default behaviour when creating a diff is to redraw every pixels that differ between 
@@ -106,10 +106,10 @@ namespace ILI9341_T4
         *                  considered equal and may not be redrawn. 
         * 
         * NOTE : this method always returns a valid diff even if it runs out of memory to store the diff. However, 
-		*        when this happens, the diff returned is (partly) trivial and this will have a negative impact on 
-		*        the upload speed. For optimal speed, the diff buffer size/gap parameter should be chosen such that
-		*        a typical diff do not overflow... The printStats() method can be useful to find how much memory a 
-		*        diff typically use and thus dimension the buffer size and gap accordingly. The size of a typical 
+        *        when this happens, the diff returned is (partly) trivial and this will have a negative impact on 
+        *        the upload speed. For optimal speed, the diff buffer size/gap parameter should be chosen such that
+        *        a typical diff do not overflow... The printStats() method can be useful to find how much memory a 
+        *        diff typically use and thus dimension the buffer size and gap accordingly. The size of a typical 
         *        diff will depend on how much changes occurs between frames but in most case, choosing  gap=10 and a 
         *        buffer size around 5K is a good starting point. 
         **/
