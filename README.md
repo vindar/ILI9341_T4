@@ -24,12 +24,31 @@ In particular, the following advanced features are available:
 
 **(1) This library only works with Teensy 4/4.1 but not with Teensy 3.2/3.5/3.6. You need lots of memory (typically 2 framebuffers and a couple of diff buffers which means around 320Kb of RAM) so it would not be practical to use the library with those other MCUs anyway...**
 
-**(2) The library's only task is to perform framebuffer upload from memory to the screen. It does not provide any drawing primitive. You must use another canvas library to draw directly onto the memory framebuffer. If you do not care about ultimate performance and want an all-in-one solution, you might be better off with Kurte's ILI9341_t3n library which offers tremendous functionalities and works for all Teensy models.** 
+**(2) The library's only task is to perform framebuffer upload from memory to the screen. It does not provide any drawing primitive. You must use another canvas library to draw directly onto the memory framebuffer. To do so, you can use the <a href="https://github.com/vindar/tgx">tgx</a> library which provides optimized drawing primitives for 2D and 3D graphics on a memory framebuffer.**
 
 
 ## Using the library
 
-### 1. including the library 
+### 0. Physical setup / wiring
+
+The library uses a special wiring scheme where the `DC` and and `CS` pin are inverted: the `DC` pin from the ILI9341 screen must be connected to a cs capable pin on the Teensy (and the `CS` pin from the ILI9341 screen can be connected to any other pin on the Teensy). 
+
+On teensy 4/4.1, one can use either SPI0 or SPI1 (SPI2 might alos work but is not readily accessible). Here are possible wiring in both cases:
+
+ILI9341 SCREEN | TEENSY 4/4.1 (SPI0) | TEENSY 4/4.1 (SPI1) |NOTE
+--- | --- | --- | ---
+VCC |  | | power from +3.6V to +5.5V
+GND |  | | connects to ground, obviously
+CS  | PIN 9 | PIN 30 | any digital pin will do
+RESET | PIN 6 | PIN29 | any digital pin will do
+DC | PIN 10 | PIN 0 |  
+SDI (MOSI) | PIN 11 | PIN 26|
+SCK | PIN 13 | PIN27 |
+LED | | | connect to +3.3V through a small resistor (50 Ohm)
+SDO (MISO) | PIN 12 | PIN 1 |  
+
+
+### 1. Including the library 
 
 As for any arduino library, it should be installed in arduino's `/libraries` subfolder where it will be found automatically. Then, we only need to include the library's main header. 
 ```
@@ -228,11 +247,21 @@ tft.update(fb, true); // fb will be uploaded without computing the diff (but jus
 
 - **Printing statistics**. Several methods are available to provide detailed stats about the performance of the driver. All these methods take the form `statsXXX`. Also, there is a very convenient method for debugging/optimization call `printStats()` (same for diff buffers) that will print out all the statistics of the driver onto a given stream (Serial by default). 
 
-- **Using the touchscreen**. If a touchscreen is present and connected to the same spi bus, then additional methods become available to read the touch screen status. `lastTouched()` will return the number of milliseconds elapsed since the screen was last touched (only available if the touch_irq pin is set). The `readTouch()` method will return the currently touched position and pressure. Finally, `setTouchRange()` method can be used to set a mapping from touch coordinates to screen coordinates if needed.
-
 - **diff buffer and memory allocation**. The library performs no memory allocation. All the memory needed (framebuffer and diff buffers) are to be provided by the user which keeps complete control over memory allocation. For diff buffers, the `StaticDiffBuffer<>` template class provides a convenient way to create diff buffers with statically allocated memory. However, if more control is needed, one can use the base `DiffBuffer` class which is similar but requires the user to provide the memory space at construction time. See the file `DiffBuff.h` for additional details. 
 
 - **Getting for information, additional methods**. There are several other methods that can be used to fine-tune the driver performance. In particular: `resync()`, `setDiffCompareMask`, `setLateFrameRatio()`... Details about these methods (and more) can be found in the header file [ILI9341Driver.h](https://github.com/vindar/ILI9341_T4/blob/main/src/ILI9341Driver.h). Each method has a detailed docstring above its declaration explaining its purpose.
+
+- **Using the touchscreen**. If a touchscreen is present and connected to the same spi bus, then additional methods become available to read the touch screen status. `lastTouched()` will return the number of milliseconds elapsed since the screen was last touched (only available if the touch_irq pin is set). The `readTouch()` method will return the currently touched position and pressure. Finally, `setTouchRange()` method can be used to set a mapping from touch coordinates to screen coordinates if needed.
+
+The wiring for the touchscreen should follow:
+
+ILI9341 SCREEN | TEENSY 4/4.1
+--- | --- 
+`T_CLK` | same pin on the Teensy as `SCK`
+`T_CS` |  any available digital pin
+`T_DIN` | same pin on the Teensy as `SDI (MOSI)`
+`T_DO` | same pin on the Teensy as `SDO (MISO)`
+`T_IRQ` | any available digital pin
 
 
 ## Credits
