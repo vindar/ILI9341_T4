@@ -100,7 +100,7 @@ namespace ILI9341_T4
                                                  6, 0xCB, 0x39, 0x2C, 0x00, 0x34, 0x02,     //
                                                  2, 0xF7, 0x20,                             //
                                                  3, 0xEA, 0x00, 0x00,                       //
-                                                 2, ILI9341_T4_PWCTR1, 0x20, // Power control 0x23
+                                                 2, ILI9341_T4_PWCTR1, 0x23, // Power control 0x23 (or 0x20)
                                                  2, ILI9341_T4_PWCTR2, 0x10, // Power control
                                                  3, ILI9341_T4_VMCTR1, 0x3e, 0x28, // VCM control
                                                  2, ILI9341_T4_VMCTR2, 0x86, // VCM control2
@@ -122,29 +122,31 @@ namespace ILI9341_T4
             pinMode(_touch_cs, OUTPUT);
             digitalWrite(_touch_cs, HIGH);
             }
+        /*
         if (_cs != 255)
             { // set screen CS high also. 
             digitalWrite(_cs, HIGH);
             pinMode(_cs, OUTPUT);
             digitalWrite(_cs, HIGH);
             }
+        */
         _rotation = 0; // default rotation
-        // verify SPI pins are valid; allow user to say use current ones...
+        // verify SPI pins are valid
         _spi_clock = spi_clock;
         _spi_clock_read = spi_clock_read;
-        if (SPI.pinIsMOSI(_mosi) && ((_miso == 0xff) || SPI.pinIsMISO(_miso)) && SPI.pinIsSCK(_sclk))
+        if (SPI.pinIsMOSI(_mosi) && SPI.pinIsMISO(_miso) && SPI.pinIsSCK(_sclk))
             {
             _pspi = &SPI;
             _spi_num = 0; // Which buss is this spi on?
             _pimxrt_spi = &IMXRT_LPSPI4_S; // Could hack our way to grab this from SPI object, but...        
             }
-        else if (SPI1.pinIsMOSI(_mosi) && ((_miso == 0xff) || SPI1.pinIsMISO(_miso)) && SPI1.pinIsSCK(_sclk))
+        else if (SPI1.pinIsMOSI(_mosi) && SPI1.pinIsMISO(_miso) && SPI1.pinIsSCK(_sclk))
             {
             _pspi = &SPI1;
             _spi_num = 1; // Which buss is this spi on?
             _pimxrt_spi = &IMXRT_LPSPI3_S; // Could hack our way to grab this from SPI object, but...
             }
-        else if (SPI2.pinIsMOSI(_mosi) && ((_miso == 0xff) || SPI2.pinIsMISO(_miso)) && SPI2.pinIsSCK(_sclk))
+        else if (SPI2.pinIsMOSI(_mosi) && SPI2.pinIsMISO(_miso) && SPI2.pinIsSCK(_sclk))
             {
             _pspi = &SPI2;
             _spi_num = 2; // Which buss is this spi on?
@@ -157,7 +159,7 @@ namespace ILI9341_T4
         // Make sure we have all of the proper SPI pins selected.
         _pspi->setMOSI(_mosi);
         _pspi->setSCK(_sclk);
-        if (_miso != 0xff) _pspi->setMISO(_miso);
+        _pspi->setMISO(_miso);
 
         // Hack to get hold of the SPI Hardware information...
         uint32_t* pa = (uint32_t*)((void*)_pspi);
@@ -196,7 +198,15 @@ namespace ILI9341_T4
                 delay(20);
                 digitalWrite(_rst, HIGH);
                 }
-            delay(150);
+            else
+                {
+                _beginSPITransaction(_spi_clock / 4); // quarter speed for setup !              
+                for(int i=0; i<5; i++) _writecommand_cont(ILI9341_T4_NOP); // send NOPs
+                _writecommand_last(ILI9341_T4_SWRESET); // issue a software reset
+                _endSPITransaction();                   
+                }
+            delay(150); // mandatory !
+           
             _beginSPITransaction(_spi_clock / 4); // quarter speed for setup ! 
             const uint8_t* addr = init_commands;
             while (1)
@@ -265,6 +275,8 @@ namespace ILI9341_T4
         outputStream->print("- Pixel Format        : 0x"); outputStream->println(x, HEX);
         x = _readcommand8(ILI9341_T4_RDIMGFMT);
         outputStream->print("- Image Format        : 0x"); outputStream->println(x, HEX);
+        x = _readcommand8(ILI9341_T4_RDSGNMODE);
+        outputStream->print("- Display Signal Mode : 0x"); outputStream->println(x, HEX);       
         x = _readcommand8(ILI9341_T4_RDSELFDIAG);
         outputStream->print("- Self Diagnostic     : 0x"); outputStream->print(x, HEX);
         if (x == ILI9341_T4_SELFDIAG_OK)

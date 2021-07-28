@@ -98,6 +98,7 @@ namespace ILI9341_T4
 #define ILI9341_T4_RDMADCTL 0x0B
 #define ILI9341_T4_RDPIXFMT 0x0C
 #define ILI9341_T4_RDIMGFMT 0x0D
+#define ILI9341_T4_RDSGNMODE 0x0E
 #define ILI9341_T4_RDSELFDIAG 0x0F
 
 #define ILI9341_T4_INVOFF 0x20
@@ -176,6 +177,7 @@ class ILI9341Driver
 {
 
 public:
+
 
 
 
@@ -1544,6 +1546,7 @@ private:
     * About SPI
     ***********************************************************************************************************/
 
+
     uint32_t _spi_clock;                        // spi write speed
     uint32_t _spi_clock_read;                   // spi read speed
 
@@ -1566,6 +1569,25 @@ private:
     uint32_t _tcr_dc_not_assert;                // mask for the TCR register when DC is not asserted (high)
 
     uint8_t _pending_rx_count;                  // hack ...
+
+
+
+
+    /** for debugging PASET and CASET errors*/
+    void _drawRect(int xmin, int xmax, int ymin, int ymax, uint16_t color)
+            {       
+            _beginSPITransaction(_spi_clock);
+            _writecommand_cont(ILI9341_T4_PASET);
+            _writedata16_cont(ymin);
+            _writedata16_cont(ymax);
+            _writecommand_cont(ILI9341_T4_CASET);
+            _writedata16_cont(xmin);
+            _writedata16_cont(xmax);
+            _writecommand_cont(ILI9341_T4_RAMWR);           
+            for(int i=0; i< (xmax - xmin + 1)*(ymax-ymin + 1); i++) _writedata16_cont(color);           
+            _writecommand_last(ILI9341_T4_NOP); 
+            _endSPITransaction();
+            }
 
 
     void _beginSPITransaction(uint32_t clock) __attribute__((always_inline))
