@@ -58,13 +58,6 @@ namespace ILI9341_T4
     {
     public:
 
-        static const int LX = 240;                  // framebuffer width in orientation 0
-        static const int LY = 320;                  // framebuffer height in orientation 0
-        static const int MAX_WRITE_LINE = 120;      // max number of lines to be written in a single operation.
-        static const int MIN_SCANLINE_SPACE = 8;    // min number of lines between the current write line and the current scanline
-
-        static_assert((LX & 3) == 0, "LX must be divisible by 4");
-
 
         /** Framebuffer orientation**/
         enum
@@ -74,6 +67,14 @@ namespace ILI9341_T4
             PORTRAIT_240x320_FLIPPED = 2,
             LANDSCAPE_320x240_FLIPPED = 3,
             };
+
+
+        static const int LX = 240;                  // framebuffer width in orientation 0
+        static const int LY = 320;                  // framebuffer height in orientation 0
+        static const int MAX_WRITE_LINE = 120;      // max number of lines to be written in a single operation.
+        static const int MIN_SCANLINE_SPACE = 8;    // min number of lines between the current write line and the current scanline
+
+        static_assert((LX & 3) == 0, "LX must be divisible by 4");
 
 
         /**
@@ -117,11 +118,39 @@ namespace ILI9341_T4
 
 
         /**
-        * Copy the new framebuffer over the old one (and rotate it to put it in orientation 0). 
+        * Compute a diff between a (old) framebuffer and a region of a new framebuffer while merging the
+        * result with a previous diff (if provided).
+        * 
+        * old_diff must be another diff buffer (not this object) or nullptr if nothing was previously changed.  
+        *
+        * the position of the region in the old diff buffer is described by sub_fb_new is (xmin,xmax,ymin,ymax) 
+        * when fb_old is rotated from orientation 0 to orientation 'fb_new_orientation'
+        *
+        * The layout is Pixel(xmin+x,ymin+y) = sub_fb_new[x + stride*y]
+        *
+        **/
+        virtual void computeDiff(uint16_t* fb_old, DiffBuffBase* diff_old, const uint16_t* sub_fb_new, int xmin, int xmax, int ymin, int ymax, int stride, 
+                                 int fb_new_orientation, int gap, bool copy_new_over_old = true, uint16_t compare_mask = 0) = 0;
+
+
+        /**
+        * Copy the new framebuffer over the old one (and rotate it to put it in orientation 0 in fb_old). 
         **/
         static void copyfb(uint16_t* fb_old, const uint16_t* fb_new, int fb_new_orientation);
             
 
+        /**
+        * Copy a sub framebuffer over an old one (and rotate it to put it in orientation 0 in fb_old).
+        *
+        * the position of the region in the old diff buffer is described by sub_fb_new is (xmin,xmax,ymin,ymax) 
+        * when fb_old is rotated from orientation 0 to orientation 'fb_new_orientation'
+        *
+        * The layout is Pixel(xmin+x,ymin+y) = sub_fb_new[x + stride*y]
+        *
+        **/
+        static void copyfb(uint16_t* fb_old, const uint16_t* fb_new, int xmin, int xmax, int ymin, int ymax, int src_stride, int fb_new_orientation);
+
+ 
         /**
         * Call this method to reinitialize the diff prior to the first call
         * to readDiff().          
@@ -147,9 +176,33 @@ namespace ILI9341_T4
         virtual int readDiff(int& x, int& y, int& len, int scanline) = 0;
 
 
+        /**
+        * Call this method to reinitialize the diff prior to the first call
+        * to readRaw().
+        **/
+        virtual void initRaw() = 0;
+
+
+        /**
+        * Read a 'raw' instruction (nb_write, nb_read) from the diff buffer.
+        * return (LX*LY + 1, 0) for TAG_WRITE_ALL and (0, LX*LY + 1) for TAG_END.  
+        **/
+        virtual void readRaw(int & nbwrite, int & nbskip) = 0;
+
+
+
+        /**
+        * Transform a box according from a given orientation to orientation 0.
+        * (xmin,xmax,ymin,ymax) describe the box w.r.t. orientation 'orientation'
+        * 
+        * the method fills (x1,x2,y1,y2) with the box coord. according to orientation 0. 
+        **/
+        static void rotationBox(int orientation, int xmin, int xmax, int ymin, int ymax, int & x1, int & x2, int & y1, int & y2);
 
 
     private:
+        
+        // copy and rotate a framebuffer
         
         static void _copy_rotate_0(uint16_t* fb_dest, const uint16_t* fb_src);           
 
@@ -159,6 +212,16 @@ namespace ILI9341_T4
            
         static void _copy_rotate_270(uint16_t* fb_dest, const uint16_t* fb_src);
            
+        // copy and rotate a sub-framebuffer into a framebuffer.
+        
+        static void _copy_rotate_0(uint16_t* fb_dest, const uint16_t* fb_src, int x1, int x2, int y1, int y2, int w, int h, int src_stride);
+
+        static void _copy_rotate_90(uint16_t* fb_dest, const uint16_t* fb_src, int x1, int x2, int y1, int y2, int w, int h, int src_stride);
+
+        static void _copy_rotate_180(uint16_t* fb_dest, const uint16_t* fb_src, int x1, int x2, int y1, int y2, int w, int h, int src_stride);
+
+        static void _copy_rotate_270(uint16_t* fb_dest, const uint16_t* fb_src, int x1, int x2, int y1, int y2, int w, int h, int src_stride);
+                     
 
     };
 
@@ -188,15 +251,21 @@ namespace ILI9341_T4
         * Constructor. Set the buffer (and its size).
         * sizebuf should not be too small (at least MIN_BUFFER_SIZE but say 1K to be useful).
         **/
-        DiffBuff(uint8_t* buffer, size_t sizebuf) : DiffBuffBase(), _tab(buffer), _sizebuf(sizebuf - PADDING), _posw(0), _posr(0)
+        DiffBuff(uint8_t* buffer, size_t sizebuf) : DiffBuffBase(), _tab(buffer), _sizebuf(sizebuf - PADDING), _posw(0), _posr(0), _posraw(0)
             {
             statsReset();
             _write_encoded(TAG_END);
             initRead();
+            initRaw();
             }
 
 
+
         virtual void computeDiff(uint16_t* fb_old, const uint16_t* fb_new, int fb_new_orientation, int gap, bool copy_new_over_old, uint16_t compare_mask) override;
+
+
+        virtual void computeDiff(uint16_t* fb_old, DiffBuffBase* diff_old, const uint16_t* sub_fb_new, int xmin, int xmax, int ymin, int ymax, int stride,
+                                 int fb_new_orientation, int gap, bool copy_new_over_old, uint16_t compare_mask) override;
 
 
         virtual void initRead() override
@@ -208,6 +277,32 @@ namespace ILI9341_T4
 
 
         virtual int readDiff(int& x, int& y, int& len, int scanline) override;
+
+
+        virtual void initRaw()
+            {
+            _posraw = 0;
+            }
+
+
+        virtual void readRaw(int& nbwrite, int& nbskip) override
+            {
+            nbwrite = _read_encoded(_posraw);
+            if (nbwrite == TAG_END) 
+                { 
+                nbwrite = 0;  
+                nbskip = DiffBuffBase::LX * DiffBuffBase::LY + 1;
+                }
+            else if (nbwrite == TAG_WRITE_ALL) 
+                { 
+                nbwrite = DiffBuffBase::LX * DiffBuffBase::LY + 1;
+                nbskip = 0; 
+                }
+            else 
+                { 
+                nbskip = _read_encoded(_posraw);
+                }
+            }
 
 
         /**
@@ -269,7 +364,6 @@ namespace ILI9341_T4
 
 
 
-
     private:
 
         static const int        MIN_BUFFER_SIZE = 16;             // minimum buffer size
@@ -282,6 +376,7 @@ namespace ILI9341_T4
 
         int _posw;                          // current position in the array (for writing)
         int _posr;                          // current position in the array (for reading)
+        int _posraw;                        // current position in the array for raw reading
 
         int _r_x, _r_y, _r_len;             // current instruction (for reading)
         bool _r_cont;                       // true is (_r_x, _r_y_, _r_len) contain a valid instruction (for reading). 
@@ -293,22 +388,22 @@ namespace ILI9341_T4
 
 
         /** Read a value */
-        uint32_t _read_encoded() __attribute__((always_inline))
+        uint32_t _read_encoded(int & pos) __attribute__((always_inline))
             {
-            const uint8_t b = _tab[_posr++];
+            const uint8_t b = _tab[pos++];
             switch (b & 3)
                 {
                 case 1: // 2 bytes:encoding
                     {
                     uint32_t r = (uint32_t)(b >> 2);
-                    r += (((uint32_t)_tab[_posr++]) << 6);
+                    r += (((uint32_t)_tab[pos++]) << 6);
                     return r;
                     }
                 case 3: // 3 bytes encoding
                     {
                     uint32_t r = (uint32_t)(b >> 2);
-                    r += (((uint32_t)_tab[_posr++]) << 6);
-                    r += (((uint32_t)_tab[_posr++]) << 14);
+                    r += (((uint32_t)_tab[pos++]) << 6);
+                    r += (((uint32_t)_tab[pos++]) << 14);
                     return r;
                     }
                 default: // single byte encoding
@@ -382,6 +477,10 @@ namespace ILI9341_T4
         void _computeDiff3(uint16_t* fb_old, const uint16_t* fb_new, int gap, uint16_t compare_mask);
 
 
+        /** main method when computing partial diff */
+        void _computeDiff(uint16_t* fb_old, DiffBuffBase* diff_old, const uint16_t* sub_fb_new, int xmin, int xmax, int ymin, int ymax, int stride,
+                          int fb_new_orientation, int gap, bool copy_new_over_old, uint16_t compare_mask);
+
     };
 
 
@@ -434,8 +533,10 @@ namespace ILI9341_T4
 
 
         /** ctor */
-        DiffBuffDummy() : DiffBuffBase(), _current_line(0), _begin(0), _end(DiffBuffBase::LY)
+        DiffBuffDummy() : DiffBuffBase(), _current_line(0), _begin(0), _end(DiffBuffBase::LY), _rawnb(0)
             {
+            initRead();
+            initRaw();
             }
 
 
@@ -445,6 +546,19 @@ namespace ILI9341_T4
             if (copy_new_over_old)
                 { // still copy if requested. 
                 copyfb(fb_old, fb_new, fb_new_orientation);
+                }
+            _begin = 0;
+            _end = DiffBuffBase::LY;
+            initRead();
+            }
+
+
+        virtual void computeDiff(uint16_t* fb_old, DiffBuffBase* diff_old, const uint16_t* sub_fb_new, int xmin, int xmax, int ymin, int ymax, int stride,
+                                 int fb_new_orientation, int gap, bool copy_new_over_old, uint16_t compare_mask) override
+            {
+            if (copy_new_over_old)
+                { // still copy if requested. 
+                copyfb(fb_old, sub_fb_new, xmin, xmax, ymin, ymax, stride, fb_new_orientation);
                 }
             _begin = 0;
             _end = DiffBuffBase::LY;
@@ -470,13 +584,44 @@ namespace ILI9341_T4
         virtual int readDiff(int& x, int& y, int& len, int scanline) override;
         
 
+        virtual void initRaw()
+            {
+            _rawnb = 0;
+            }
 
-    public:
+        virtual void readRaw(int& nbwrite, int& nbskip) override
+            {
+            if (_rawnb == 0)
+                {
+                _rawnb = 1;
+                nbwrite = 0;
+                nbskip = DiffBuffBase::LX * _begin;
+                if (nbskip > 0) return;
+                }
+            if (_rawnb == 1)
+                {
+                _rawnb = 2;
+                nbwrite = DiffBuffBase::LX * (_end - _begin);
+                nbskip = DiffBuffBase::LX * (DiffBuffBase::LY - _end);
+                }
+            nbwrite = 0;
+            nbskip = DiffBuffBase::LX * DiffBuffBase::LY + 1;
+            }
+
+
+        /** set the diff buffer as empty(no change) when using the readRaw command */ 
+        void setRawEmpty()
+            {
+            _rawnb = 2;    
+            }
+
+    private:
 
 
         int _current_line; // index of the next line to be drawn. 
         int _begin;
         int _end;
+        int _rawnb;
 
     };
 

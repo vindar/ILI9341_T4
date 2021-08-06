@@ -63,7 +63,7 @@ namespace ILI9341_T4
 #define ILI9341_T4_DEFAULT_LATE_START_RATIO 0.3      // default "proportion" of the frame admissible for late frame start when using vsync. 
 
 #define ILI9341_T4_TRANSACTION_DURATION 3           // number of pixels that could be uploaded during a typical CASET/PASET/RAWR sequence. 
-#define ILI9341_T4_RETRY_INIT 3                     // number of times we try initialization in begin() before returning an error. 
+#define ILI9341_T4_RETRY_INIT 5                     // number of times we try initialization in begin() before returning an error. 
 #define ILI9341_T4_TFTWIDTH 240                     // screen dimension x (in default orientation 0)
 #define ILI9341_T4_TFTHEIGHT 320                    // screen dimension y (in default orientation 0)
 #define ILI9341_T4_NB_SCANLINES ILI9341_T4_TFTHEIGHT// scanlines are mapped to the screen height
@@ -214,12 +214,36 @@ public:
 
 
 
+
+    /**
+    * Set the output Stream used by the drier for displaying infos. 
+    *
+    * Set this to nullptr to prevent sending any information. 
+    * 
+    * The stream is used, in particular by the following methods:
+    * 
+    * - `begin()` for debugging/displaying debug info    
+    * - `printStatus()` to check the the driver status  
+    * - `printRefreshMode()` to display available refresh rates/modes
+    * - `printStats()` to print statistics about frame uploads
+    * - `calibrateTouch()` to provide instruction for calibration  
+    * 
+    **/
+    void output(Stream * outputStream = nullptr)
+        {
+        _outputStream = outputStream;
+        }
+
+
     /**
     * Initialize the screen (and optionally set the speed for read/write spi transfers).
     *
     * Call this method only once. There is no associated end() method.
     * 
     * Return true if init OK, false if an error occured.
+    * 
+    * NOTE: if an output stream is set with the `output()` method, then debug information
+    * are send to this stream.
     **/
     bool begin(uint32_t spi_clock = ILI9341_T4_DEFAULT_SPICLOCK, uint32_t spi_clock_read = ILI9341_T4_DEFAULT_SPICLOCK_READ);
 
@@ -232,12 +256,13 @@ public:
 
 
     /**
-    * Print some info about the screen status on a given output stream.
-    * (for debug purpose).
+    * Print some info about the screen status (for debug purpose).
+    * 
+    * Output is sent to the stream set with the `output()` method.
     * 
     * Use printStats() instead to get statistics for optimization purposes. 
     **/
-    void printStatus(Stream* outputStream = &Serial);
+    void printStatus();
 
 
     /**
@@ -453,10 +478,12 @@ public:
     /**
     * Display all the screen refresh mode with corresponding refresh rates. 
     * 
+    * The infos are sent to the output stream set with the `output()` method.
+    * 
     * This method is will take a few seconds as its cycles through all the modes
     * and must sample the exact refresh rate each time.
     **/
-    void printRefreshMode(Stream* outputStream = &Serial);
+    void printRefreshMode();
 
 
 
@@ -792,6 +819,13 @@ public:
     ****************************************************************************************************/
 
 
+    /**
+    * Clear the screen to a single color (default black). 
+    *
+    * This operation is done immediately (i.e. not async) so the screen is cleared on return.
+    **/
+    void clear(uint16_t color = 0);
+
 
 
     /**
@@ -893,6 +927,45 @@ public:
     *         RANGING FROM 5K TO 10K).
     **/
     void update(const uint16_t* fb, bool force_full_redraw = false);
+
+
+
+
+    /**
+    *                             PARTIAL SCREEN UPDATE METHOD
+    *
+    * Update a part of the screen. The behaviour of the method depend on the current buffering 
+    * mode and the vsync_spacing parameter.
+    *
+    * WHEN THE METHOD RETURNS, THE FRAME MAY OR MAY NOT ALREADY BE DISPLAYED ON THE SCREEN BUT
+    * THE INPUT FRAMEBUFFER fb CAN STILL BE REUSED IMMEDIATELY IN ANY CASE (A COPY IS MADE WHEN
+    * USING ASYNC UPDATES).
+    *
+    * - fb represent the rectangular region of the screen [xmin, xmax] x [ymin, ymax] 
+    *   The layout of fb is such that, on the screen pixel(xmin + i,ymin + j) = fb[i + stride*j]
+    *   If stride is not specified, it defaults to (xmax - xmin + 1) which is the width of the
+    *   rectanglular region.
+    *
+    * - redrawNow. If set to true, the screen is redrawn immediately (possibly async. if an internal
+    *   framebuffer is set). If set to false (and an internal framebuffer is available), then the 
+    *   change are stored in the internal framebuffer but are not drawn on the screen. This permits to
+    *   call regionUpdate() several times without drawing onto the screen and only draw all the changes  
+    *   simultenously when needed. This is particularly convienient when using the lvgl library. 
+    *
+    *
+    * NOTE: (1) Similarly to the 'update()' method, this method wil use vsync when enabled. 
+    *
+    *       (2) In there is no internal buffer, then screen is updated immediately even if
+    *           redrawNow=false.  
+    *
+    *       (3) For this method, TWO diff buffers are required to use differntial updates,
+    *           On the other hand, one one internal framebuffer is used (setting a second one is
+    *           useless).
+    *
+    * ADVICE: USE DOUBLE BUFFERING (I.E. 1 INTERNAL FRAMEBUFFER) WITH 2 DIFF BUFFERS (WITH SIZE
+    *         RANGING FROM 3K TO 6K).
+    **/    
+    void updateRegion(bool redrawNow, const uint16_t* fb, int xmin, int xmax, int ymin, int ymax, int stride = -1); 
 
 
     /**
@@ -1037,9 +1110,11 @@ public:
     /**
     * Output statistics about the object into a stream.
     * 
+    * The infos are sent to the output stream set with the `output()` method.
+    *
     * Useful for fine-tuning the parameters.
     **/
-    void printStats(Stream* outputStream = &Serial) const;
+    void printStats() const;
 
 
 
@@ -1071,30 +1146,74 @@ public:
 
     /**
     * Read the touchscreen. Return the position (x,y) and pressure level z.
-    *
+    * Return true if the screen is being touched.
+    * 
+    * The coord. (x,y) returned are given w.r.t. the current screen orientation if calibration
+    * data are loaded and are 'raw' value (indep. of orientation) is no calibration data
+    * is currently loaded. 
+    * 
     * If the touch_irq pin is assigned, it will avoid using the spi bus whenever possible.
     *
     * If the spi bus must be used. The method will wait until the current ongoinc async
-    * transfer completes (if any) so this method may sometime stall for a few milliseconds. 
+    * transfer completes (if any). This means that this method may stall for a few 
+    * milliseconds. 
     **/
-    void readTouch(int& x, int& y, int& z);
+    bool readTouch(int& x, int& y, int& z);
 
 
     /**
-    * Set a mapping from touch coordinates to screen coordinates.
+    * Set a mapping from touch coordinates to screen coordinates (or 
+    * remove an existing mapping by calling with nullptr).
     *
-    * - Until this method is called (or after being called with default parameters),
-    *   readTouch() returns the "raw" values for the (x,y) coordinate.
+    * - Until this method is called (or after being called with nullptr),
+    *   readTouch() will returns the "raw" values for the (x,y) coordinate.
     *
-    * - Once the range has been set, readTouch() will subsequently return the (x,y)
-    *    coordinates mapped to [0, width-1] * [0, height-1] where width and height
-    *    are the screen dimensions. 
-    *
-    * NOTE: The range should be reset when the screen orientation changes.
+    * - Once calibration has been set, readTouch() will subsequently return   
+    *   the (x,y) coordinates according to the current orientation.
+    *   
+    * - 'touchCalibration' is a set of 4 value corresponding to touch values for 
+    * positions {x[0], x[239], y[0], y[319]} in orientation 0. This is the
+    * same array as returned by calibrateTouch();
     **/
-    void setTouchRange(int minx = 0, int maxx = 0, int miny = 0, int maxy = 0);
+    void setTouchCalibration(int touchCalibration[4] = nullptr);
 
 
+    /**
+    * Query the current calibration data for the touchscreen. 
+    * Return true and put the data in 'touchCalibration' if available.
+    * Otherwise, return false and do not modify 'touchCalibration'.
+    **/
+    bool getTouchCalibration(int touchCalibration[4]);
+
+
+    /**
+    * Perform interactive touchscreen calibration. 
+    * 
+    * Instructions for calibration are given to the output stream
+    * set with the `output()` method.
+    *  
+    * Calibration data is stored in 'calibrateTouch' if not null.
+    **/
+    void calibrateTouch(int touchCalibration[4] = nullptr);
+
+
+    /**
+    * Set the threshold value for detecting a touch event. 
+    * The default value should be good enough in most cases.
+    **/
+    inline void setTouchThreshold(int Zthreshold = ILI9341_T4_TOUCH_Z_THRESHOLD)
+        {
+        _touch_z_threshold = Zthreshold;
+        }
+
+
+    /**
+    * Return the current threshold value for touch events.
+    **/
+    inline int getTouchThreshold()
+        {
+        return _touch_z_threshold;
+        }
 
 
 private:
@@ -1118,10 +1237,28 @@ private:
     typedef void (*callback_t)(void*);                  // function callback signature 
     using methodCB_t = void (ILI9341Driver::*)(void);   // typedef to method callback. 
 
-
     int16_t _width, _height;                    // Display w/h as modified by current rotation    
     int     _rotation;                          // current screen orientation
     int     _refreshmode;                       // refresh mode (between 0 = fastest refresh rate and 15 = slowest refresh rate). 
+    
+    mutable Stream * _outputStream;                      // output stream used for debugging
+
+    /** helper methods for writing to _outputStream (without using variadic parameters...) */
+    template<typename T> void _print(const T & v) const { if (_outputStream) _outputStream->print(v); }
+
+    template<typename T> void _println(const T & v) const { if (_outputStream) _outputStream->println(v); }
+
+    template<typename T1, typename T2> void _print(const T1 & u, const T2 & v) const { if (_outputStream) _outputStream->print(u,v); }
+
+    template<typename T1, typename T2> void _println(const T1 & u, const T2 & v) const { if (_outputStream) _outputStream->println(u,v); }
+
+    template<typename T1> void _printf(const char * str, const T1 & a) const { if (_outputStream) _outputStream->printf(str, a); }
+
+    template<typename T1, typename T2> void _printf(const char * str, const T1 & a, const T2 & b) const { if (_outputStream) _outputStream->printf(str, a,b); }
+
+    template<typename T1, typename T2, typename T3> void _printf(const char * str, const T1 & a, const T2 & b, const T3 & c) const { if (_outputStream) _outputStream->printf(str, a,b,c); }
+
+    template<typename T1, typename T2, typename T3, typename T4> void _printf(const char * str, const T1 & a, const T2 & b, const T3 & c, const T4 & d) const { if (_outputStream) _outputStream->printf(str, a,b,c,d); }
 
 
 
@@ -1145,8 +1282,12 @@ private:
     uint16_t* volatile _fb1;                    // first internal framebuffer
     uint16_t* volatile _fb2;                    // second internal framebuffer (if non null, then _fb1 is also non zero). 
     uint16_t* volatile _mirrorfb;               // framebuffer that currently mirrors the screen (or will mirror it when upload completes).
-    volatile bool _fb2full;                     // true if the second framebuffer is currently full and waiting to be uploaded. 
 
+    DiffBuffBase* volatile _ongoingDiff;        // should be nullptr when mirror_fb = true.
+                                                // when _mirrorfb = false, if this is not equal to nullptr, then this means that
+                                                // the diff pointed here contains the difference between _fb1 and the screen
+
+    volatile bool _fb2full;                     // true if the second framebuffer is currently full and waiting to be uploaded. 
 
 
     /** called when fb2 is full and must be drawn on the screen */
@@ -1160,6 +1301,17 @@ private:
     * - uses the _vsync_spacing parameter to choose the vsync stategy.
     **/
     void _updateNow(const uint16_t* fb, DiffBuffBase* diff);
+
+
+    /**
+    * Update a rectangular region of the screen directly.
+    * no diff buffer (the whole region is updated)
+    * no vsync (i.e. as fast as possible)
+    * no dma.
+    **/
+    public:
+        void _updateRectNow(const uint16_t* sub_fb, int xmin, int xmax, int ymin, int ymax, int stride);
+
 
 
     void _pushpixels(const uint16_t* fb, int x, int y, int len)  __attribute__((always_inline))
@@ -1571,111 +1723,96 @@ private:
     uint8_t _pending_rx_count;                  // hack ...
 
 
-
-
     /** for debugging PASET and CASET errors*/
-    void _drawRect(int xmin, int xmax, int ymin, int ymax, uint16_t color)
-            {       
-            _beginSPITransaction(_spi_clock);
-            _writecommand_cont(ILI9341_T4_PASET);
-            _writedata16_cont(ymin);
-            _writedata16_cont(ymax);
-            _writecommand_cont(ILI9341_T4_CASET);
-            _writedata16_cont(xmin);
-            _writedata16_cont(xmax);
-            _writecommand_cont(ILI9341_T4_RAMWR);           
-            for(int i=0; i< (xmax - xmin + 1)*(ymax-ymin + 1); i++) _writedata16_cont(color);           
-            _writecommand_last(ILI9341_T4_NOP); 
-            _endSPITransaction();
-            }
+    void _drawRect(int xmin, int xmax, int ymin, int ymax, uint16_t color);
 
 
     void _beginSPITransaction(uint32_t clock) __attribute__((always_inline))
-    {
+        {
         _pspi->beginTransaction(SPISettings(clock, MSBFIRST, SPI_MODE0));
         _spi_tcr_current = _pimxrt_spi->TCR; //  DC is on hardware CS
         if (_csport) _directWriteLow(_csport, _cspinmask); // drive CS low
-    }
+        }
 
 
     void _endSPITransaction() __attribute__((always_inline))
-    {
+        {
         if (_csport) _directWriteHigh(_csport, _cspinmask); // drive CS high
         _pspi->endTransaction();
-    }
+        }
 
 
     uint8_t _readcommand8(uint8_t reg, uint8_t index = 0, int timeout_ms = 10);
 
 
     void _writecommand_cont(uint8_t c) __attribute__((always_inline))
-    {
+        {
         _maybeUpdateTCR(_tcr_dc_assert | LPSPI_TCR_FRAMESZ(7) | LPSPI_TCR_CONT); // 
         _pimxrt_spi->TDR = c;
         _pending_rx_count++; //
         _waitFifoNotFull();
-    }
+        }
 
 
     void _writedata8_cont(uint8_t c) __attribute__((always_inline))
-    {
+        {
         _maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(7) | LPSPI_TCR_CONT);
         _pimxrt_spi->TDR = c;
         _pending_rx_count++; //
         _waitFifoNotFull();
-    }
+        }
 
 
     void _writedata16_cont(uint16_t d) __attribute__((always_inline))
-    {
+        {
         _maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(15) | LPSPI_TCR_CONT);
         _pimxrt_spi->TDR = d;
         _pending_rx_count++; //
         _waitFifoNotFull();
-    }
+        }
 
 
     void _writecommand_last(uint8_t c) __attribute__((always_inline))
-    {
+        {   
         _maybeUpdateTCR(_tcr_dc_assert | LPSPI_TCR_FRAMESZ(7));
         _pimxrt_spi->TDR = c;
         // _pimxrt_spi->SR = LPSPI_SR_WCF | LPSPI_SR_FCF | LPSPI_SR_TCF;
         _pending_rx_count++; //
         _waitTransmitComplete();
-    }
+        }
 
 
     void _writedata8_last(uint8_t c) __attribute__((always_inline))
-    {
+        {
         _maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(7));
         _pimxrt_spi->TDR = c;
         // _pimxrt_spi->SR = LPSPI_SR_WCF | LPSPI_SR_FCF | LPSPI_SR_TCF;
         _pending_rx_count++; //
         _waitTransmitComplete();
-    }
+        }
 
 
     void _writedata16_last(uint16_t d) __attribute__((always_inline))
-    {
+        {
         _maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(15));
         _pimxrt_spi->TDR = d;
         // _pimxrt_spi->SR = LPSPI_SR_WCF | LPSPI_SR_FCF | LPSPI_SR_TCF;
         _pending_rx_count++; //
         _waitTransmitComplete();
-    }
+        }
 
 
     void _maybeUpdateTCR(uint32_t requested_tcr_state) __attribute__((always_inline))
-    {
+        {
 #define ILI9341_T4_TCR_MASK (LPSPI_TCR_PCS(3) | LPSPI_TCR_FRAMESZ(31) | LPSPI_TCR_CONT | LPSPI_TCR_RXMSK)
         if ((_spi_tcr_current & ILI9341_T4_TCR_MASK) != requested_tcr_state) // we must update the TRANSMIT COMMAND REGISTER (TCR). 
-        {
+            {
             _spi_tcr_current = (_spi_tcr_current & ~ILI9341_T4_TCR_MASK) | requested_tcr_state;
             // only output when Transfer queue is empty.       
             while ((_pimxrt_spi->FSR & 0x1f));
             _pimxrt_spi->TCR = _spi_tcr_current; // update the TCR    
+            }
         }
-    }
 
 
     void _waitFifoNotFull();
@@ -1705,10 +1842,9 @@ private:
     volatile bool _touched_read;                // true if touch irq has occured 
     volatile int _touch_x, _touch_y, _touch_z;  // last touch position 
 
-    volatile int _touch_minx;                   //
-    volatile int _touch_maxx;                   // mapping from touch coord
-    volatile int _touch_miny;                   // to screen coord. 
-    volatile int _touch_maxy;                   // 
+    volatile int _touch_z_threshold;            // threshold for touch detection
+    volatile bool _touch_has_calibration;       // true if touch calibration is enabled
+    volatile int _touch_calib[4];               // touch calibration value
 
     static ILI9341Driver* volatile _touchObjects[4];   // point back to this->
 
@@ -1719,11 +1855,11 @@ private:
 
     /** the touch interrupt */
     void _touch_int()
-    {
+        {
         _touched = true;
         _touched_read = true;
         _em_touched_irq = 0;
-    }
+        }
 
 
     /** set the touch interrupt routine */
@@ -1740,12 +1876,29 @@ private:
     static int16_t _besttwoavg(int16_t x, int16_t y, int16_t z);
 
 
+    /** convert from raw value to x coord (in orientation 0) */
+    inline int _mapTouchX(int x, int A, int B)
+        {
+        return _clip((int)roundf(ILI9341_T4_TFTWIDTH * ((float)(x - A)) / (B - A)), 0, ILI9341_T4_TFTWIDTH - 1);
+        }
+
+    /** convert from raw value to y coord (in orientation 0) */
+    inline int _mapTouchY(int y, int C, int D)
+        {
+        return _clip((int)roundf(ILI9341_T4_TFTHEIGHT * ((float)(y - C)) / (D - C)), 0, ILI9341_T4_TFTHEIGHT - 1);
+        }
+
+
+    /** draw a calibration rectangle */
+    void _calibRect(int cx, int cy, int R);
+
+
+    /** used for touch calibration */
+    void _calibTouch(int& x, int& y, int& z, int prv_x = -1, int prv_y = -1);
 
 
 
 };
-
-
 
 
 

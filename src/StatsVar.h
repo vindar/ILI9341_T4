@@ -77,7 +77,7 @@ namespace ILI9341_T4
         /**
          * Output the statistics into a stream. 
          **/
-        void print(const char* unit = "", const char * endl = "", Stream* outputStream = &Serial, bool with_precision = false) const
+        void print(const char* unit, const char * endl, Stream* outputStream, bool with_precision = false) const
             {
             if (with_precision)
                 outputStream->printf("avg=%.2f%s [min=%d%s , max=%d%s] std=%.2f%s%s", avg(), unit, min(), unit, max(), unit, std(), unit, endl);
