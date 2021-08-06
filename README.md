@@ -1,6 +1,11 @@
 # ILI9341_T4
 
-![ili9341](./ILI9341.jpg)
+<p align="center">
+<img src="./ILI9341.jpg" height="300" />
+<a href="https://www.youtube.com/watch?v=lLYCwFRF4Mc" target="_blank"><img src="http://img.youtube.com/vi/lLYCwFRF4Mc/0.jpg" 
+ width="400" height="300" border="10" /></a></p>
+
+
 
 ## Optimized ILI9341 screen driver library for Teensy 4/4.1, with vsync and differential updates
 
