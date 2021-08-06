@@ -161,7 +161,10 @@ int_fast8_t getActiveAnimIndex() {
 
 void setup() 
     {
+    Serial.begin(9600);
 
+    tft.output(&Serial);                // output debug infos to serial port. 
+    
     while (!tft.begin(SPI_SPEED))
         {
         Serial.println("Initialization error...");

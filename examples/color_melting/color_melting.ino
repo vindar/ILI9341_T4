@@ -113,8 +113,13 @@ void setup()
     {
     Serial.begin(9600);
 
-    if (!tft.begin(SPI_SPEED))
+    tft.output(&Serial);                // output debug infos to serial port. 
+ 
+    while (!tft.begin(SPI_SPEED))
+        {
         Serial.println("Initialization error...");
+        delay(1000);
+        }
 
 
     LX = tft.width();  // save screen dimension for the drawing methods. 

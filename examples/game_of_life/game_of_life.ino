@@ -45,7 +45,7 @@ ILI9341_T4::DiffBuffStatic<8192> diff1;
 ILI9341_T4::DiffBuffStatic<8192> diff2;
 
 
-// Screen size in portrait mode
+// Screen size in landscape mode
 #define LX  320
 #define LY  240
 
@@ -154,6 +154,8 @@ void compute(uint8_t* cur_world, uint8_t* new_world)
 void setup()
     {
     Serial.begin(9600);
+
+    tft.output(&Serial);                // output debug infos to serial port. 
 
     // initialize the display
     while (!tft.begin())
