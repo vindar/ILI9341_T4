@@ -15,9 +15,11 @@ In particular, the following advanced features are available:
 
 - **vsync and screen tearing prevention.** This is the best part :-) The driver monitors the position of the current scanline being refreshed on the screen and orders the pixel updates so that they trail behind this scanline. This makes it possible to completely suppress screen tearing provided the update can be done in less than two refresh periods. In most cases, it is possible to reach a solid 45FPS (and more!) without any screen tearing, even with moderate spi speeds. 
 
-- **Multiple buffering methods.** Support direct upload, double buffering and triple buffering configurations.
+- **Multiple buffering methods.** Support direct upload, double buffering and triple buffering configurations. Partial updates with direct or deferred redraw is also possible. 
 
-- **driver for XPT2046 touchscreen.** Some ILI9341 screens have an associated touchscreen. The driver can also manage this touchscreen on the same spi bus making sure there is no spi conflict.  This simplifies the wiring since only one (or two) additional wires are needed to enable touch in that case.  
+- **Optimized for use with the LVGL library** Easy to integrate with the <a href="https://github.com/lvgl/lvgl">lvgl library</a>. Blazzingly fast (tear free!) GUI is obtained by using partial differential updates (and without requiring full double buffering - only 200KB of RAM needed).   
+
+- **driver for XPT2046 touchscreen.** Some ILI9341 screens have an associated touchscreen. The driver can also manage this touchscreen on the same spi bus making sure there is no spi conflict.  This simplifies the wiring since only one (or two when using touch interrupt) additional wires are needed to enable touch in that case.  
 
 
 ## Warnings
@@ -52,7 +54,7 @@ SDO (MISO) | PIN 12 | PIN 1 |
 
 As for any arduino library, it should be installed in arduino's `/libraries` subfolder where it will be found automatically. Then, we only need to include the library's main header. 
 ```
-#include "ILI9341Driver.h"
+#include <ILI9341_T4.h>
 ```
 Everything in the library is located under the `ILI9341_T4` namespace so the include will not pollute the global namespace.
 
@@ -81,9 +83,9 @@ Also, if we want to activate double (or triple) buffering, we need one (or two) 
 DMAMEM uint16_t fb_internal1[240*320];  // an 'internal' frame buffer for double buffering
 DMAMEM uint16_t fb_internal2[240*320];  // and a third for triple buffering (optional)
 ```
-The buffers above have been placed in the upper 512K (dmamem) portion of the memory to preserve the RAM in the faster lower portion (dtcm). The buffers can be placed anywhere in RAM (even in EXTMEM if external ram is present but there will be a huge speed penalty in that case). Triple buffering is a bit overkill and double buffering should be good enough for most usage.
+The buffers above have been placed in the upper 512K (dmamem) portion of the memory to preserve the RAM in the faster lower portion (dtcm). The buffers can be placed anywhere in RAM (even in EXTMEM if external ram is present but there will be a huge speed penalty in that case).
 
-**Remark.** Not using any internal framebuffer is possible but then asynchronous and differential updates will be disabled, removing most of the library benefit... **Use double buffering !** 
+**Remark.** Not using any internal framebuffer is possible but then asynchronous and differential updates will be disabled, removing most of the library benefit... COnversely, triple buffering is a overkill and usually does not provide any significant improvement over double buffering (and require an additional 150KB of RAM). **ADVICE: use double buffering !** 
 
 
 #### (c) Diff buffers
@@ -96,6 +98,8 @@ ILI9341_T4::DiffBuffStatic<4096> diff1; // a first diff buffer with 4K memory (s
 ILI9341_T4::DiffBuffStatic<4096> diff2; // and a second one. 
 ```
 The template parameter above specifies the size (in bytes) of the buffer. It should range from 1K to 10K depending on the kind of content displayed. The method `diff1.printStats()` can be used to check the diff buffer memory consumption and adjust its size accordingly.
+
+**Remark.** Two diff buffer are useful even when using double (and not triple buffering) and we provide a nive pseed boost: **ADVICE: always use two diff buffers**.
 
 ### 3. Initialization and configuration. 
 
@@ -251,7 +255,7 @@ tft.update(fb, true); // fb will be uploaded without computing the diff (but jus
 
 - **Getting for information, additional methods**. There are several other methods that can be used to fine-tune the driver performance. In particular: `resync()`, `setDiffCompareMask`, `setLateFrameRatio()`... Details about these methods (and more) can be found in the header file [ILI9341Driver.h](https://github.com/vindar/ILI9341_T4/blob/main/src/ILI9341Driver.h). Each method has a detailed docstring above its declaration explaining its purpose.
 
-- **Using the touchscreen**. If a touchscreen is present and connected to the same spi bus, then additional methods become available to read the touch screen status. `lastTouched()` will return the number of milliseconds elapsed since the screen was last touched (only available if the touch_irq pin is set). The `readTouch()` method will return the currently touched position and pressure. Finally, `setTouchRange()` method can be used to set a mapping from touch coordinates to screen coordinates if needed.
+- **Using the touchscreen**. If a touchscreen is present and connected to the same spi bus, then additional methods become available to read the touch screen status. `lastTouched()` will return the number of milliseconds elapsed since the screen was last touched (only available if the touch_irq pin is set). The `readTouch()` method will return the currently touched position and pressure. Finally, 'calibrateTouch()' provides an interactive method to calibrate the touchscreen and `setTouchCalibration()` can subsequently be used to load calibration data at the beggining of a script.
 
 The wiring for the touchscreen should follow:
 
@@ -261,7 +265,7 @@ ILI9341 SCREEN | TEENSY 4/4.1
 `T_CS` |  any available digital pin
 `T_DIN` | same pin on the Teensy as `SDI (MOSI)`
 `T_DO` | same pin on the Teensy as `SDO (MISO)`
-`T_IRQ` | any available digital pin
+`T_IRQ` | (optional) any available digital pin
 
 
 ## Credits
