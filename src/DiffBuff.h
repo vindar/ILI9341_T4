@@ -19,15 +19,16 @@
 *  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 *******************************************************************************/
 
-#pragma once
+#ifndef _II9341_T4_DIFFBUFF_H_
+#define _II9341_T4_DIFFBUFF_H_
 
+// only C++, no plain C
+#ifdef __cplusplus
 
 #include "StatsVar.h"
 
 #include <Arduino.h>
 #include <math.h>
-
-
 
 
 namespace ILI9341_T4
@@ -630,7 +631,9 @@ namespace ILI9341_T4
 
 }
 
+#endif
 
+#endif
 
 /** end of file */
 

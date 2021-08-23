@@ -20,11 +20,14 @@
 *******************************************************************************/
 
 
-#pragma once
+#ifndef _ILI9341_T4_H_
+#define _ILI9341_T4_H_
 
 // forward to the real header. 
 #include "ILI9341Driver.h"
 
+
+#endif
 
 /** end of file */
 

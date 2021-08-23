@@ -30,7 +30,11 @@
 *     -> for all the touchscreen related methods.
 **/
 
-#pragma once
+#ifndef _ILI9341_T4_ILI9341Driver_H_
+#define _ILI9341_T4_ILI9341Driver_H_
+
+// only c++, no plain c
+#ifdef __cplusplus
 
 #include "StatsVar.h"
 #include "DiffBuff.h"
@@ -39,7 +43,6 @@
 #include <DMAChannel.h>
 #include <SPI.h>
 #include <stdint.h>
-
 
 // This libray uses specify hardware features of Teensy 4/4.1 and will not work with another MCU...
 #if (!defined(__IMXRT1062__))  ||  (!defined(CORE_TEENSY))
@@ -1904,5 +1907,8 @@ private:
 
 }
 
+#endif 
+
+#endif
 /** end of file */
 

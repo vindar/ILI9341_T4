@@ -18,7 +18,12 @@
 *  License along with this library; if not, write to the Free Software
 *  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 *******************************************************************************/
-#pragma once
+#ifndef _ILI9341_T4_STATSVAR_H_
+#define _ILI9341_T4_STATSVAR_H_
+
+// only C++, no plain C
+#ifdef __cplusplus
+
 
 #include <stdint.h>
 #include <Arduino.h>
@@ -79,10 +84,13 @@ namespace ILI9341_T4
          **/
         void print(const char* unit, const char * endl, Stream* outputStream, bool with_precision = false) const
             {
-            if (with_precision)
-                outputStream->printf("avg=%.2f%s [min=%d%s , max=%d%s] std=%.2f%s%s", avg(), unit, min(), unit, max(), unit, std(), unit, endl);
-            else
-                outputStream->printf("avg=%.0f%s [min=%d%s , max=%d%s] std=%.0f%s%s", avg(), unit, min(), unit, max(), unit, std(), unit, endl);
+            if (outputStream)
+                {
+                if (with_precision)
+                    outputStream->printf("avg=%.2f%s [min=%d%s , max=%d%s] std=%.2f%s%s", avg(), unit, min(), unit, max(), unit, std(), unit, endl);
+                else
+                    outputStream->printf("avg=%.0f%s [min=%d%s , max=%d%s] std=%.0f%s%s", avg(), unit, min(), unit, max(), unit, std(), unit, endl);
+                }
             }
 
 
@@ -137,6 +145,9 @@ namespace ILI9341_T4
 
 }
 
+#endif
+
+#endif
 
 /** end of file */
 
