@@ -9,12 +9,6 @@ namespace ILI9341_T4
             {
             switch (orientation)
                 {
-            case PORTRAIT_240x320:
-                x1 = xmin;
-                x2 = xmax;
-                y1 = ymin;
-                y2 = ymax;
-                break;
             case LANDSCAPE_320x240:
                 x1 = DiffBuffBase::LX - 1 - ymax;
                 x2 = DiffBuffBase::LX - 1 - ymin;
@@ -32,6 +26,12 @@ namespace ILI9341_T4
                 x2 = ymax;
                 y1 = DiffBuffBase::LY - 1 - xmax;
                 y2 = DiffBuffBase::LY - 1 - xmin;
+                break;
+            default: // case PORTRAIT_240x320:
+                x1 = xmin;
+                x2 = xmax;
+                y1 = ymin;
+                y2 = ymax;
                 break;
                 }
             }
