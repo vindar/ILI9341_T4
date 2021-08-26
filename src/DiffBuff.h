@@ -339,9 +339,9 @@ namespace ILI9341_T4
 
 
         /**
-        * Return the percentage of diff that overflowed (between 0 and 1.0).
+        * Return the percentage of diff that overflowed (between 0 and 1).
         **/
-        double statsOverflowRatio() const { return ((statsNbComputed() > 0) ? (((double)_stat_overflow) / statsNbComputed()) : 0.0); }
+        float statsOverflowRatio() const { return ((statsNbComputed() > 0) ? (((float)_stat_overflow) / statsNbComputed()) : 0.0f); }
 
 
         /**
