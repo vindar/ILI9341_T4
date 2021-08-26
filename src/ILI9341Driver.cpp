@@ -514,7 +514,7 @@ namespace ILI9341_T4
         for(int m = 0; m <= 31; m++)
             {
             setRefreshMode(m);
-            double r = getRefreshRate();
+            float r = getRefreshRate();
             _printf("- mode %u : %fHz (%u FPS with vsync_spacing = 2).\n", m, r, (uint32_t)round(r/2));
             }
         _println("");
@@ -564,23 +564,23 @@ namespace ILI9341_T4
             while (_getScanLine(true) != 0);  // wait to reach scanline 0
             while (_getScanLine(true) == 0);  // wait to begin scanline 1. 
             }
-        _period = (uint32_t)round(((double)em) / NB_SAMPLE_FRAMES);
+        _period = (uint32_t)round(((float)em) / NB_SAMPLE_FRAMES);
         }
 
 
-    double ILI9341Driver::_refreshRateForMode(int mode) const
+    float ILI9341Driver::_refreshRateForMode(int mode) const
         { 
-        double freq = 1000000.0 / _period_mode0;
+        float freq = 1000000.0f / _period_mode0;
         if (mode >= 16)
             {
-            freq /= 2.0; 
+            freq /= 2.0f; 
             mode -= 16;
             }
-        return (freq*16.0)/(16.0+mode);
+        return (freq*16.0f)/(16.0f + mode);
         }
 
 
-    int ILI9341Driver::_modeForRefreshRate(double hz) const
+    int ILI9341Driver::_modeForRefreshRate(float hz) const
         {
         if (hz <= _refreshRateForMode(31)) return 31;
         if (hz >= _refreshRateForMode(0)) return 0;
@@ -591,8 +591,8 @@ namespace ILI9341_T4
             int c = (a + b) / 2;
             ((hz < _refreshRateForMode(c)) ? a : b) = c;
             }
-        double da = _refreshRateForMode(a) - hz;
-        double db = hz - _refreshRateForMode(b);
+        float da = _refreshRateForMode(a) - hz;
+        float db = hz - _refreshRateForMode(b);
         return (da < db ? a : b);
         }
 
@@ -1742,9 +1742,9 @@ namespace ILI9341_T4
         _print("\n\n[Statistics]\n");
         _printf("- average framerate  : %.1f FPS  (%u frames in %ums)\n", statsFramerate(), statsNbFrames(), statsTotalTime());
         if (diffUpdateActive()) 
-            _printf("- upload rate        : %.1f FPS  (%.2fx compared to full redraw)\n", 1000000.0/_statsvar_uploadtime.avg(), statsDiffSpeedUp());
+            _printf("- upload rate        : %.1f FPS  (%.2fx compared to full redraw)\n", 1000000.0f/_statsvar_uploadtime.avg(), statsDiffSpeedUp());
         else
-            _printf("- upload rate        : %.1f FPS\n", 1000000.0 / _statsvar_uploadtime.avg());
+            _printf("- upload rate        : %.1f FPS\n", 1000000.0f / _statsvar_uploadtime.avg());
         _print("- upload time / frame: "); _statsvar_uploadtime.print("us", "\n",_outputStream);
         _print("- CPU time / frame   : "); _statsvar_cputime.print("us", "\n",_outputStream);
         _print("- pixels / frame     : "); _statsvar_uploaded_pixels.print("", "\n",_outputStream);

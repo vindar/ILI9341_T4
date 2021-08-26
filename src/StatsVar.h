@@ -115,18 +115,18 @@ namespace ILI9341_T4
         /**
          * Return the average value of all records (since the last reset).
          **/
-        double avg() const { return ((_count == 0) ? 0 : (((double)_sum) / _count)); }
+        float avg() const { return ((_count == 0) ? 0 : (((float)_sum) / _count)); }
 
 
         /**
          * Return the std around its average off all records (since the last reset).
          **/
-        double std() const 
+        float std() const 
             {
-            if (_count == 0) return 0.0;
-            const double a = _sum;
-            const double b = ((((uint64_t)_sumsqr) >> 32) * 4294967296.0) + (((uint64_t)_sumsqr) & 0xFFFFFFFF); // BUG: converting directly from uint64 to double fails so we do this dirty workaround...
-            const double c = sqrt((b - ((a*a)/ _count))/_count);
+            if (_count == 0) return 0.0f;
+            const float a = _sum;
+            const float b = ((((uint64_t)_sumsqr) >> 32) * 4294967296.0f) + (((uint64_t)_sumsqr) & 0xFFFFFFFF); // BUG: converting directly from uint64 to double fails so we do this dirty workaround...
+            const float c = sqrt((b - ((a*a)/ _count))/_count);
             return c;
             }
 

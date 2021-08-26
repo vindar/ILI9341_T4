@@ -63,7 +63,7 @@ namespace ILI9341_T4
 
 #define ILI9341_T4_DEFAULT_VSYNC_SPACING 2           // vsync on with framerate = refreshrate/2 = 45FPS. 
 #define ILI9341_T4_DEFAULT_DIFF_GAP 6                // default gap for diffs (typ. between 4 and 50)
-#define ILI9341_T4_DEFAULT_LATE_START_RATIO 0.3      // default "proportion" of the frame admissible for late frame start when using vsync. 
+#define ILI9341_T4_DEFAULT_LATE_START_RATIO 0.3f     // default "proportion" of the frame admissible for late frame start when using vsync. 
 
 #define ILI9341_T4_TRANSACTION_DURATION 3           // number of pixels that could be uploaded during a typical CASET/PASET/RAWR sequence. 
 #define ILI9341_T4_RETRY_INIT 5                     // number of times we try initialization in begin() before returning an error. 
@@ -463,7 +463,7 @@ public:
     *
     * Remark: calling this method reset the statistics.
     **/
-    void setRefreshRate(double refreshrate_hz)
+    void setRefreshRate(float refreshrate_hz)
         {
         const int m = _modeForRefreshRate(refreshrate_hz);
         setRefreshMode(m);
@@ -475,7 +475,7 @@ public:
     * Get the refresh rate in Hz of the display corresponding to the current
     * refresh mode set.
     **/
-    double getRefreshRate() const { return (_period == 0) ? 0.0 : 1000000.0 / _period; }
+    float getRefreshRate() const { return (_period == 0) ? 0.0f : 1000000.0f / _period; }
 
 
     /**
@@ -552,7 +552,7 @@ public:
     void setVSyncSpacing(int vsync_spacing = ILI9341_T4_DEFAULT_VSYNC_SPACING)
         {
         waitUpdateAsyncComplete();
-        _vsync_spacing = _clip(vsync_spacing, -1, ILI9341_T4_MAX_VSYNC_SPACING);
+        _vsync_spacing = ILI9341Driver::_clip<int>((int)vsync_spacing, (int)-1, (int)ILI9341_T4_MAX_VSYNC_SPACING);
         statsReset();
         resync();
         }
@@ -567,7 +567,7 @@ public:
 
     /**
     * Set how late we can be behind the initial sync line and still start uploading a frame without
-    * waiting for the next refresh for synchronization. Set a value in [0.1, 0.9]
+    * waiting for the next refresh for synchronization. Set a value in [0.1f, 0.9f]
     *
     * - Choosing a small value will reduce screen tearing but may make the framerate oscillate more
     *   when the timing is tight.
@@ -577,10 +577,10 @@ public:
     *
     * Remark: calling this method reset the statistics.
     **/
-    void setLateStartRatio(double ratio = ILI9341_T4_DEFAULT_LATE_START_RATIO)
+    void setLateStartRatio(float ratio = ILI9341_T4_DEFAULT_LATE_START_RATIO)
         {
         waitUpdateAsyncComplete(); // no need to wait for sync. 
-        _late_start_ratio = _clip(ratio, 0.1, 0.9);
+        _late_start_ratio = ILI9341Driver::_clip<float>(ratio, 0.1f, 0.9f);
         statsReset();
         resync();
         }
@@ -600,7 +600,7 @@ public:
     /**
     * Return the value of the "late start ratio" parameter.
     **/
-    double getLateStartRatio() const { return _late_start_ratio; }
+    float getLateStartRatio() const { return _late_start_ratio; }
 
 
 
@@ -753,7 +753,7 @@ public:
     void setDiffGap(int gap = ILI9341_T4_DEFAULT_DIFF_GAP)
         {
         waitUpdateAsyncComplete();
-        _diff_gap = _clip(gap,1,ILI9341_T4_NB_PIXELS);
+        _diff_gap = ILI9341Driver::_clip<int>((int)gap,(int)1,(int)ILI9341_T4_NB_PIXELS);
         statsReset();
         resync();
         }
@@ -1022,7 +1022,7 @@ public:
     * Return the average framerate in Hz which is simply the number of 
     * frame drawn divided the total time. 
     **/
-    double statsFramerate() const { return  (_stats_nb_frame == 0) ? 0.0 : ((_stats_nb_frame * 1000.0) / _stats_elapsed_total); }
+    float statsFramerate() const { return  (_stats_nb_frame == 0) ? 0.0f : ((_stats_nb_frame * 1000.0f) / _stats_elapsed_total); }
 
 
     /**
@@ -1052,7 +1052,7 @@ public:
     * Return the ratio of the average number of pixels uploaded per frame 
     * compared to the total number of pixel is the screen.
     **/
-    double statsRatioPixelPerFrame() const  { return (((double)_statsvar_uploaded_pixels.avg()) / ILI9341_T4_NB_PIXELS); }
+    float statsRatioPixelPerFrame() const  { return (((float)_statsvar_uploaded_pixels.avg()) / ILI9341_T4_NB_PIXELS); }
 
 
     /**
@@ -1070,10 +1070,10 @@ public:
     * If the value returned is smaller than one. It means that there is not real 
     * benefits to using differential updates so it should be disabled. 
     **/
-    double statsDiffSpeedUp() const
+    float statsDiffSpeedUp() const
         {
-        if ((!diffUpdateActive())|| (_statsvar_transactions.count() == 0)) return 1.0;
-        return ((double)(ILI9341_T4_NB_PIXELS * 16)) / ((double)_spi_clock) * (1000000.0 / _statsvar_uploadtime.avg());
+        if ((!diffUpdateActive())|| (_statsvar_transactions.count() == 0)) return 1.0f;
+        return ((float)(ILI9341_T4_NB_PIXELS * 16)) / ((float)_spi_clock) * (1000000.0f / _statsvar_uploadtime.avg());
         }
 
 
@@ -1105,9 +1105,9 @@ public:
     /**
     * Return the ratio of frame with vsync active for which screen tearing
     * may have occured.
-    * (returns 1.0 when vsync is OFF).  
+    * (returns 1.0f when vsync is OFF).  
     **/
-    double statsRatioTeared() const { return (_vsync_spacing <= 0) ? 1.0 : ((_statsvar_vsyncspacing.count() == 0) ? 0.0 : (((double)_nbteared) / _statsvar_margin.count())); }
+    float statsRatioTeared() const { return (_vsync_spacing <= 0) ? 1.0f : ((_statsvar_vsyncspacing.count() == 0) ? 0.0f : (((float)_nbteared) / _statsvar_margin.count())); }
 
 
     /**
@@ -1271,7 +1271,7 @@ private:
 
     volatile int _diff_gap;                     // gap when creating diffs.
     volatile int _vsync_spacing;                // update stategy / framerate divider. 
-    volatile double _late_start_ratio;          // late start parameter (by how much we can miss the first sync line and still start the frame without waiting for the next refresh).
+    volatile float _late_start_ratio;          // late start parameter (by how much we can miss the first sync line and still start the frame without waiting for the next refresh).
     volatile bool _late_start_ratio_override;   // if true the next frame upload will wait for the scanline to start a next frame. 
     volatile uint16_t _compare_mask;             // the compare mask used to compare pixels when doing a diff
 
@@ -1486,12 +1486,12 @@ private:
 
 
     /**
-    * Convert a ratio in [0.0, 1.0] to a scanline in [|0, ILI9341_T4_NB_SCANLINES - 1|]
+    * Convert a ratio in [0.0f, 1.0f] to a scanline in [|0, ILI9341_T4_NB_SCANLINES - 1|]
     **/
-    int _ratioToScanline(double r) const __attribute__((always_inline))
+    int _ratioToScanline(float r) const __attribute__((always_inline))
         {
         int l = (int)(r * ILI9341_T4_NB_SCANLINES);
-        l = _clip(l, 0, ILI9341_T4_NB_SCANLINES - 1);
+        l = ILI9341Driver::_clip((int)l, (int)0, (int)ILI9341_T4_NB_SCANLINES - 1);
         return l;
         }
 
@@ -1547,13 +1547,13 @@ private:
     /**
     * estimate the refreshrate (in Hz) for a given mode based on the refresh rate for mode 0
     **/
-    double _refreshRateForMode(int mode) const;
+    float _refreshRateForMode(int mode) const;
 
 
     /**
     * Find the mode with closest refresh rate.
     **/
-    int _modeForRefreshRate(double hz) const;
+    int _modeForRefreshRate(float hz) const;
 
 
 
@@ -1882,13 +1882,13 @@ private:
     /** convert from raw value to x coord (in orientation 0) */
     inline int _mapTouchX(int x, int A, int B)
         {
-        return _clip((int)roundf(ILI9341_T4_TFTWIDTH * ((float)(x - A)) / (B - A)), 0, ILI9341_T4_TFTWIDTH - 1);
+        return ILI9341Driver::_clip<int>((int)roundf(ILI9341_T4_TFTWIDTH * ((float)(x - A)) / (B - A)), (int)0, (int)ILI9341_T4_TFTWIDTH - 1);
         }
 
     /** convert from raw value to y coord (in orientation 0) */
     inline int _mapTouchY(int y, int C, int D)
         {
-        return _clip((int)roundf(ILI9341_T4_TFTHEIGHT * ((float)(y - C)) / (D - C)), 0, ILI9341_T4_TFTHEIGHT - 1);
+        return ILI9341Driver::_clip<int>((int)roundf(ILI9341_T4_TFTHEIGHT * ((float)(y - C)) / (D - C)), (int)0, (int)ILI9341_T4_TFTHEIGHT - 1);
         }
 
 
