@@ -979,7 +979,25 @@ public:
     * NOTE: This method should not be called in normal use cases as it will create a 
             "busy wait" and wastes precious CPU time...
     **/
-    inline void waitUpdateAsyncComplete() { while ((_dma_state != ILI9341_T4_DMA_IDLE)); }
+    inline void waitUpdateAsyncComplete() 
+        {
+        if (_dma_state != ILI9341_T4_DMA_IDLE)
+            {
+            elapsedMillis em = 0;
+            while ((_dma_state != ILI9341_T4_DMA_IDLE))
+                {
+                if (em > 2)
+                    { // after a few ms, we call yield in each loop.
+                    yield();
+                    if (em > 1000)
+                        { // waiting for a full second. Really looks like its hanging. 
+                        _println("ILI9341_T4Driver: Hanging in waitUpdateAsyncComplete()...");
+                        em = 0;
+                        }
+                    }
+                }
+            }
+        }
 
 
     /**
@@ -1570,10 +1588,10 @@ private:
     volatile int _pitindex; // index for which pitObj this-> refers to. 
     volatile bool _istimer; // true if a timer is currently waiting to ring. 
 
-    static void _pitcb0() { if (_pitObj[0]) { _pitObj[0]->_it.end(); _pitObj[0]->_istimer = false; ((_pitObj[0])->*(_pitObj[0]->_pitcb))(); } }  // forward to the timer method cb
-    static void _pitcb1() { if (_pitObj[1]) { _pitObj[1]->_it.end(); _pitObj[1]->_istimer = false; ((_pitObj[1])->*(_pitObj[1]->_pitcb))(); } }  // forward to the timer method cb
-    static void _pitcb2() { if (_pitObj[2]) { _pitObj[2]->_it.end(); _pitObj[2]->_istimer = false; ((_pitObj[2])->*(_pitObj[2]->_pitcb))(); } }  // forward to the timer method cb
-    static void _pitcb3() { if (_pitObj[3]) { _pitObj[3]->_it.end(); _pitObj[3]->_istimer = false; ((_pitObj[3])->*(_pitObj[3]->_pitcb))(); } }  // forward to the timer method cb
+    static void _pitcb0() { if (_pitObj[0]) { noInterrupts(); _pitObj[0]->_it.end(); _pitObj[0]->_istimer = false; interrupts(); ((_pitObj[0])->*(_pitObj[0]->_pitcb))(); } }  // forward to the timer method cb
+    static void _pitcb1() { if (_pitObj[1]) { noInterrupts(); _pitObj[1]->_it.end(); _pitObj[1]->_istimer = false; interrupts(); ((_pitObj[1])->*(_pitObj[1]->_pitcb))(); } }  // forward to the timer method cb
+    static void _pitcb2() { if (_pitObj[2]) { noInterrupts(); _pitObj[2]->_it.end(); _pitObj[2]->_istimer = false; interrupts(); ((_pitObj[2])->*(_pitObj[2]->_pitcb))(); } }  // forward to the timer method cb
+    static void _pitcb3() { if (_pitObj[3]) { noInterrupts(); _pitObj[3]->_it.end(); _pitObj[3]->_istimer = false; interrupts(); ((_pitObj[3])->*(_pitObj[3]->_pitcb))(); } }  // forward to the timer method cb
 
     volatile methodCB_t _pitcb;        // timer callback method. 
 
@@ -1584,21 +1602,38 @@ private:
 
     /** Set the timer to ring in us microseconds. */
     void _setTimerIn(uint32_t us, methodCB_t timercb) __attribute__((always_inline))
-    {
+        {
+        noInterrupts();
         _it.end(); // stop ongoing timer before changing callback method. 
         _pitcb = timercb;
-        if ((us <= 1) || (us > ILI9341_T4_MAX_DELAY_MICROSECONDS)) { us = 1; } // asap
-        NVIC_SET_PRIORITY(IRQ_PIT, ILI9341_T4_IRQ_PRIORITY); // set priority directly for all pit timer (on teensy 4: priority is shared by all pit timer). 
+        if ((us <= 3) || (us > ILI9341_T4_MAX_DELAY_MICROSECONDS)) { us = 3; } // asap
+        _it.priority(ILI9341_T4_IRQ_PRIORITY);
         _istimer = true;
         switch (_pitindex)
-        {
-        case 0: _it.begin(_pitcb0, us); break;
-        case 1: _it.begin(_pitcb1, us); break;
-        case 2: _it.begin(_pitcb2, us); break;
-        case 3: _it.begin(_pitcb3, us); break;
+            {
+            case 0: 
+                {
+                _it.begin(_pitcb0, us); 
+                break;
+                }
+            case 1: 
+                {
+                _it.begin(_pitcb1, us); 
+                break;
+                }
+            case 2: 
+                {
+                _it.begin(_pitcb2, us); 
+                break;
+                }
+            case 3: 
+                {
+                _it.begin(_pitcb3, us); 
+                break;
+                }
+            }
+        interrupts();
         }
-        NVIC_SET_PRIORITY(IRQ_PIT, ILI9341_T4_IRQ_PRIORITY); // just in case...
-    }
 
 
     /** Set the timer to ring when micros() reaches ustime */
@@ -1613,8 +1648,10 @@ private:
     /** Cancel the timer (if ticking). */
     void _cancelTimer() __attribute__((always_inline))
     {
+        noInterrupts();
         _it.end();
         _istimer = false;
+        interrupts();
     }
 
 
