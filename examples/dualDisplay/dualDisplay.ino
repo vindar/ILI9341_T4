@@ -8,33 +8,42 @@
 **/
 
 
-
 // the screen driver library
 #include <ILI9341_T4.h>
 
+
+//
 // FIRST SCREEN IS WIRED TO SPI0 
+//
 #define PIN_SCK0        13  // mandatory 
 #define PIN_MISO0       12  // mandatory
 #define PIN_MOSI0       11  // mandatory
-#define PIN_DC0         10  // mandatory
-#define PIN_CS0          9  // mandatory (but can be any digital pin)
-#define PIN_RESET0       6  // could be omitted (set to 255) yet it is better to use (any) digital pin whenever possible.
-#define PIN_BACKLIGHT0 255  // optional. Set this only if the screen LED pin is connected directly to the Teensy 
-#define PIN_TOUCH_IRQ0 255  // optional. Set this only if touch is connected on the same spi bus (otherwise, set it to 255)
-#define PIN_TOUCH_CS0  255  // optional. Set this only if touch is connected on the same spi bus (otherwise, set it to 255)
+#define PIN_DC0         10  // mandatory, can be any pin but using pin 10 (or 36 or 37 on T4.1) provides greater performance
 
+#define PIN_CS0          9  // optional (but recommended), can be any pin.  
+#define PIN_RESET0       6  // optional (but recommended), can be any pin.  
+#define PIN_BACKLIGHT0 255  // optional, set this only if the screen LED pin is connected directly to the Teensy. 
+#define PIN_TOUCH_IRQ0 255  // optional, set this only if the touchscreen is connected on the same SPI bus
+#define PIN_TOUCH_CS0  255  // optional, set this only if the touchscreen is connected on the same SPI bus
+
+
+//
 // SECOND SCREEN IS WIRED TO SPI1 
+//
 #define PIN_SCK1        27  // mandatory 
 #define PIN_MISO1        1  // mandatory
 #define PIN_MOSI1       26  // mandatory
-#define PIN_DC1          0  // mandatory
-#define PIN_CS1         30  // mandatory (but can be any digital pin)
-#define PIN_RESET1      29  // could be omitted (set to 255) yet it is better to use (any) digital pin whenever possible.
-#define PIN_BACKLIGHT1 255  // optional. Set this only if the screen LED pin is connected directly to the Teensy 
-#define PIN_TOUCH_IRQ1 255  // optional. Set this only if touch is connected on the same spi bus (otherwise, set it to 255)
-#define PIN_TOUCH_CS1  255  // optional. Set this only if touch is connected on the same spi bus (otherwise, set it to 255)
+#define PIN_DC1          0  // mandatory, can be any pin but using pin 0 (or 38 on T4.1) provides greater performance
+
+#define PIN_CS1         30  // optional (but recommended), can be any pin.  
+#define PIN_RESET1      29  // optional (but recommended), can be any pin.  
+#define PIN_BACKLIGHT1 255  // optional, set this only if the screen LED pin is connected directly to the Teensy. 
+#define PIN_TOUCH_IRQ1 255  // optional. set this only if the touchscreen is connected on the same SPI bus
+#define PIN_TOUCH_CS1  255  // optional. set this only if the touchscreen is connected on the same SPI bus
+
 
 #define SPI_SPEED 30000000
+
 
 // screen size in portrait mode
 #define LX 240
