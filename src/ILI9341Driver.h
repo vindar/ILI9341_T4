@@ -20,6 +20,7 @@
 *******************************************************************************/
 
 
+
 /**
 *CREDITS. Parts of this code is based on:
 *
@@ -1424,8 +1425,8 @@ private:
 
     DMASetting          _dmasettingsDiff[3];    // dma settings chain
   
-    uint32_t            _dma_spi_tcr_deassert;  // TCR value for deasserting DC
-    uint32_t            _dma_spi_tcr_assert;    // TCR value for asserting DC
+    volatile uint32_t   _dma_spi_tcr_deassert;  // TCR value for deasserting DC
+    volatile uint32_t   _dma_spi_tcr_assert;    // TCR value for asserting DC
 
     int                 _prev_caset_x;          // previous position set with the caset command
     int                 _prev_paset_y;          // previous position set with the paset command
@@ -1756,7 +1757,12 @@ private:
     uint32_t _cspinmask;                        // mask for the CS pin when writing directly to register port (used by directWriteHigh/Low methods)
     volatile uint32_t* _csport;                 // port to which the CS pin belongs (used by directWriteHigh/Low methods)
 
+    bool _hardware_dc;                          // true if DC is on a valid CS pin so we can use hardware speedup
+    uint32_t _dcpinmask;                        // mask for the CS pin when writing directly to register port (used by directWriteHigh/Low methods)
+    volatile uint32_t* _dcport;                 // port to which the CS pin belongs (used by directWriteHigh/Low methods)
+
     uint32_t _spi_tcr_current;                  // current value of the transfer command register (TCR) (see chap 48 of the IMXRT1060 manual). 
+
     uint32_t _tcr_dc_assert;                    // mask for the TCR register when DC is asserted (low)
     uint32_t _tcr_dc_not_assert;                // mask for the TCR register when DC is not asserted (high)
 
@@ -1771,6 +1777,7 @@ private:
         {
         _pspi->beginTransaction(SPISettings(clock, MSBFIRST, SPI_MODE0));
         _spi_tcr_current = _pimxrt_spi->TCR; //  DC is on hardware CS
+        _pending_rx_count = 0;
         if (_csport) _directWriteLow(_csport, _cspinmask); // drive CS low
         }
 
@@ -1842,15 +1849,72 @@ private:
         }
 
 
+
+#define ILI9341_T4_TCR_MASK  (LPSPI_TCR_PCS(3) | LPSPI_TCR_FRAMESZ(31) | LPSPI_TCR_CONT | LPSPI_TCR_RXMSK)
+#define ILI9341_T4_DC_PCS_MASK   (LPSPI_TCR_PCS(3))
+
+
     void _maybeUpdateTCR(uint32_t requested_tcr_state) __attribute__((always_inline))
         {
-#define ILI9341_T4_TCR_MASK (LPSPI_TCR_PCS(3) | LPSPI_TCR_FRAMESZ(31) | LPSPI_TCR_CONT | LPSPI_TCR_RXMSK)
-        if ((_spi_tcr_current & ILI9341_T4_TCR_MASK) != requested_tcr_state) // we must update the TRANSMIT COMMAND REGISTER (TCR). 
+        const uint32_t spi_tcr_new = (_spi_tcr_current & (~ILI9341_T4_TCR_MASK)) | (requested_tcr_state & ILI9341_T4_TCR_MASK);        
+        if (spi_tcr_new != _spi_tcr_current)
             {
-            _spi_tcr_current = (_spi_tcr_current & ~ILI9341_T4_TCR_MASK) | requested_tcr_state;
-            // only output when Transfer queue is empty.       
-            while ((_pimxrt_spi->FSR & 0x1f));
-            _pimxrt_spi->TCR = _spi_tcr_current; // update the TCR    
+            if (_hardware_dc)
+                { // DC is controlled by SPI
+//                while ((_pimxrt_spi->FSR & 0x1f)); // wait for output fifo to be empty.
+                _pimxrt_spi->TCR = spi_tcr_new; // update the TCR    
+                }
+            else
+                { // DC is controlled by software.                                     
+                // update the TCR anyway (dirty trick to also adds an instruction in the fifo anyway :))
+                _pimxrt_spi->TCR = (spi_tcr_new & (~ILI9341_T4_DC_PCS_MASK)) | (_tcr_dc_not_assert & ILI9341_T4_DC_PCS_MASK);
+                if ( (spi_tcr_new & ILI9341_T4_DC_PCS_MASK) != (_spi_tcr_current & ILI9341_T4_DC_PCS_MASK) )
+                    { // we must toogle DC
+                    while ((_pimxrt_spi->FSR & 0x1f)); // wait for output fifo to be empty (since the last instruction is a TCR command, it insures that we have good timing even if the last instruction is not yet executed !)                                                        
+                    if ( (spi_tcr_new & ILI9341_T4_DC_PCS_MASK) == (_tcr_dc_not_assert & ILI9341_T4_DC_PCS_MASK) )
+                        _directWriteHigh(_dcport, _dcpinmask);
+                    else
+                        _directWriteLow(_dcport, _dcpinmask);
+                    }
+                }                
+            _spi_tcr_current = spi_tcr_new;
+            }
+        }    
+
+
+    
+    void _dma_assert_dc() __attribute__((always_inline))
+        {       
+        _pimxrt_spi->TCR = _dma_spi_tcr_assert;
+        if (!_hardware_dc)
+            { // DC is controlled by SPI
+            while ((_pimxrt_spi->FSR & 0x1f)); // wait for output fifo to be empty (since the last instruction is a TCR command, it insures that we have good timing even if the last instruction is not yet executed !)                                                        
+            _directWriteLow(_dcport, _dcpinmask);
+            }
+        }
+    
+    void _dma_deassert_dc() __attribute__((always_inline))
+        {
+        _pimxrt_spi->TCR = _dma_spi_tcr_deassert;
+        if (!_hardware_dc)
+            { // DC is controlled by SPI
+            while ((_pimxrt_spi->FSR & 0x1f)); // wait for output fifo to be empty (since the last instruction is a TCR command, it insures that we have good timing even if the last instruction is not yet executed !)                                                        
+            _directWriteHigh(_dcport, _dcpinmask);
+            }
+        }
+
+
+    void _dma_set_base_tcr()
+        {
+        if (_hardware_dc)
+            {
+            _dma_spi_tcr_assert = (_spi_tcr_current & ~ILI9341_T4_TCR_MASK) | (_tcr_dc_assert | LPSPI_TCR_FRAMESZ(7) | LPSPI_TCR_RXMSK);
+            _dma_spi_tcr_deassert = (_spi_tcr_current & ~ILI9341_T4_TCR_MASK) | (_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(15) | LPSPI_TCR_RXMSK); // bug with | LPSPI_TCR_CONT
+            }
+        else
+            {
+            _dma_spi_tcr_assert = (_spi_tcr_current & ~ILI9341_T4_TCR_MASK) | (_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(7) | LPSPI_TCR_RXMSK);
+            _dma_spi_tcr_deassert = (_spi_tcr_current & ~ILI9341_T4_TCR_MASK) | (_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(15) | LPSPI_TCR_RXMSK); // bug with | LPSPI_TCR_CONT
             }
         }
 

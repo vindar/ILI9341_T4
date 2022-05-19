@@ -85,6 +85,7 @@ namespace ILI9341_T4
         _touch_irq = touch_irq;
         _cspinmask = 0;
         _csport = NULL;
+        _hardware_dc = false;
 
         _setTouchInterrupt();
         _timerinit();
@@ -134,14 +135,14 @@ namespace ILI9341_T4
             pinMode(_touch_cs, OUTPUT);
             digitalWrite(_touch_cs, HIGH);
             }
-        /*
+        
         if (_cs != 255)
             { // set screen CS high also. 
             digitalWrite(_cs, HIGH);
             pinMode(_cs, OUTPUT);
             digitalWrite(_cs, HIGH);
             }
-        */
+        
 
         // verify SPI pins are valid
         int spinum_MOSI = -1; 
@@ -209,26 +210,48 @@ namespace ILI9341_T4
         _pending_rx_count = 0; // Make sure it is zero if we we do a second begin...
 
         // CS pin direct access via port.
-        _csport = portOutputRegister(_cs);
-        _cspinmask = digitalPinToBitMask(_cs);
-        pinMode(_cs, OUTPUT);
-        _directWriteHigh(_csport, _cspinmask);
+        if (_cs < 255)
+            {
+            _printf("- CS on pin %d\n", _cs);
+            _csport = portOutputRegister(_cs);
+            _cspinmask = digitalPinToBitMask(_cs);
+            pinMode(_cs, OUTPUT);
+            _directWriteHigh(_csport, _cspinmask);
+            }
+        else
+            {
+            _print("- CS not connected to the Teensy (make sure CS is pulled down on the ILI9341 side...)\n");
+            _csport = NULL; 
+            }
 
         _spi_tcr_current = _pimxrt_spi->TCR; // get the current TCR value
 
-        if (!_pspi->pinIsChipSelect(_dc))
-            {
-            _printf("\n*** ERROR: DC (here on pin %d) is not a valid cs pin for SPI%d ***\n\n", _dc, _spi_num);
-            return false; // ERROR, DC is not a hardware CS pin for the SPI bus. 
-            }
-        _printf("- DC on pin %d [SPI%d]\n", _dc, _spi_num);
-        _printf("- CS on pin %d\n", _cs);
+        _hardware_dc = _pspi->pinIsChipSelect(_dc);
 
-        // Ok, DC is on a hardware CS pin 
-        uint8_t dc_cs_index = _pspi->setCS(_dc);
-        dc_cs_index--; // convert to 0 based
-        _tcr_dc_assert = LPSPI_TCR_PCS(dc_cs_index);
-        _tcr_dc_not_assert = LPSPI_TCR_PCS(3);
+        if (_hardware_dc)
+            {
+            if (!_pspi->pinIsChipSelect(_dc))
+                {
+                _printf("\n*** ERROR: DC (here on pin %d) is not a valid cs pin for SPI%d ***\n\n", _dc, _spi_num);
+                return false; // ERROR, DC is not a hardware CS pin for the SPI bus. 
+                }
+            _printf("- DC on pin %d [SPI%d] Hardware accelerated !\n", _dc, _spi_num);            
+            uint8_t dc_cs_index = _pspi->setCS(_dc);
+            dc_cs_index--; // convert to 0 based
+            _tcr_dc_assert = LPSPI_TCR_PCS(dc_cs_index);              
+            _tcr_dc_not_assert = LPSPI_TCR_PCS(3);            
+            }
+        else
+            {                                 
+            _printf("- DC on pin %d  >>>> *** No hardware acceleration : put DC on a hardware chip select pin for speedup *** \n", _dc, _spi_num);
+            _tcr_dc_assert = LPSPI_TCR_PCS(1);
+            _tcr_dc_not_assert = LPSPI_TCR_PCS(3);                                  
+            _dcport = portOutputRegister(_dc);
+            _dcpinmask = digitalPinToBitMask(_dc);
+            pinMode(_dc, OUTPUT);
+            _directWriteHigh(_dcport, _dcpinmask);
+            }
+            
         _maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(7)); // drive DC high now. 
 
         if (_rst < 255) _printf("- RST on pin %d\n", _rst); else _print("- RST pin not connected (set it to +3.3V).\n");
@@ -348,8 +371,9 @@ namespace ILI9341_T4
                 {
                 _print("\n*** CANNOT CONNECT TO ILI9341 SCREEN. ABORTING... ***\n\n");
                 }
-            _spi_clock_read /= 2;
+            if (_spi_clock_read > 100000)_spi_clock_read /= 2;
             _printf("Retrying connexion with slower SPI read speed : %.2fMhz", _spi_clock_read / 1000000.0f);
+            delay(1000);
             }
         }
 
@@ -529,40 +553,84 @@ namespace ILI9341_T4
             {
             return ( _synced_scanline + ((((uint64_t)_synced_em)* ILI9341_T4_NB_SCANLINES) / _period) ) % ILI9341_T4_NB_SCANLINES;
             }
-        int res[3] = { 255 }; // invalid value.
+    
         _beginSPITransaction(_spi_clock_read);
-        _maybeUpdateTCR(_tcr_dc_assert | LPSPI_TCR_FRAMESZ(7) | LPSPI_TCR_CONT);
+
+        _maybeUpdateTCR(_tcr_dc_assert | LPSPI_TCR_FRAMESZ(7));
         _pimxrt_spi->TDR = 0x45; // send command
-        delayMicroseconds(5); // wait as requested by manual. 
+        _pimxrt_spi->TCR = _spi_tcr_current;
+        while ((_pimxrt_spi->FSR & 0x1f)); // make sure command has been sent
+        delayMicroseconds(3); // wait as requeted per manual
+
+        uint32_t val = 0; 
+
+        while ((_pimxrt_spi->RSR & LPSPI_RSR_RXEMPTY) != 0);
+        val = _pimxrt_spi->RDR; // Read pending RX bytes
+
         _maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(7));
-        _pimxrt_spi->TDR = 0; // send nothing
-        _maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(7));
-        _pimxrt_spi->TDR = 0; // send nothing        
-        uint8_t rx_count = 3;
-        while (rx_count)
-            { // receive answer. 
-            if ((_pimxrt_spi->RSR & LPSPI_RSR_RXEMPTY) == 0) { res[--rx_count] = _pimxrt_spi->RDR; }
-            }
+        _pimxrt_spi->TDR = 0;
+
+        while ((_pimxrt_spi->RSR & LPSPI_RSR_RXEMPTY) != 0);
+        val = _pimxrt_spi->RDR; // Read pending RX bytes
+       
+        _maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(8)); // AHAH, the value is 9 bits ! lol...
+        _pimxrt_spi->TDR = 0;
+
+        while ((_pimxrt_spi->RSR & LPSPI_RSR_RXEMPTY) != 0);
+        val = _pimxrt_spi->RDR; // Read pending RX bytes
+
         _synced_em = 0;
+        _synced_scanline = (val > 319) ? 0 : val;  // save the scanline
+
         _endSPITransaction();
-        int sc = (2*res[0]) - 3;            // map [0,161] to [0, 319]
-        if (sc < 0) sc = 0;                 // (put the extra time at scanline 0)
-        _synced_scanline = (uint32_t)sc;    // save the scanline 
-        return sc;
+        return _synced_scanline;
         }
 
 
     void ILI9341Driver::_sampleRefreshRate()
         {
         const int NB_SAMPLE_FRAMES = 10;
-        while (_getScanLine(true) != 0);  // wait to reach scanline 0
-        while (_getScanLine(true) == 0);  // wait to begin scanline 1. 
         elapsedMicros em = 0; // start counter 
+        // wait to reach scanline 0
+        while (_getScanLine(true) != 0)
+            {
+            if (em > 1000000)
+                { // hanging...
+                em = 0;
+                _println("\n\nILI9341_T4 : Hanging inside _sampleRefreshRate(), cannot get to scan line 0...");
+                }
+            }
+        while (_getScanLine(true) == 0)
+            {
+            if (em > 1000000)
+                { // hanging...
+                em = 0;
+                _println("\n\nILI9341_T4 : Hanging inside _sampleRefreshRate() cannot get to scan line 1...");
+                }
+            } 
+        // ok, just start at scanline 1. 
+        em = 0;
         for (int i = 0; i < NB_SAMPLE_FRAMES; i++)
             {
             delayMicroseconds(5000); // must be less than 200 FPS so wait at least 5ms
-            while (_getScanLine(true) != 0);  // wait to reach scanline 0
-            while (_getScanLine(true) == 0);  // wait to begin scanline 1. 
+            // wait to reach scanline 0
+            while (_getScanLine(true) != 0)
+                {
+                if (em > 1000000)
+                    { // hanging...
+                    em = 0;
+                    _println("\n\nILI9341_T4 : Hanging inside _sampleRefreshRate(), cannot get to scan line 0 (bis)...");
+                    }
+                }
+            // wait to begin scanline 1. 
+            while (_getScanLine(true) == 0);  
+                {
+                if (em > 1000000)
+                    { // hanging...
+                    em = 0;
+                    _println("\n\nILI9341_T4 : Hanging inside _sampleRefreshRate(), cannot get to scan line 0 (bis)...");
+                    }
+                }
             }
         _period = (uint32_t)round(((float)em) / NB_SAMPLE_FRAMES);
         }
@@ -1352,34 +1420,17 @@ namespace ILI9341_T4
             return;
             }
 
-        _dma_spi_tcr_assert = (_spi_tcr_current & ~ILI9341_T4_TCR_MASK) | (_tcr_dc_assert | LPSPI_TCR_FRAMESZ(7) | LPSPI_TCR_RXMSK );
-        _dma_spi_tcr_deassert = (_spi_tcr_current & ~ILI9341_T4_TCR_MASK) | (_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(15) | LPSPI_TCR_RXMSK); // bug with | LPSPI_TCR_CONT
+        _dma_set_base_tcr();
 
         _last_y = (ILI9341_T4_TFTWIDTH * y + x + len) / ILI9341_T4_TFTWIDTH;
         _stats_nb_uploaded_pixels = len;
 
-        /* not used...
-        _dmaRAMWR = ILI9341_T4_RAMWR;
-        _dmasettingsDiff[0].sourceBuffer(&_dmaRAMWR, 1);
-        _dmasettingsDiff[0].destination(_pimxrt_spi->TDR);
-        _dmasettingsDiff[0].TCD->ATTR_DST = 0;
-        _dmasettingsDiff[0].replaceSettingsOnCompletion(_dmasettingsDiff[1]);
-        */
-
-        _dmasettingsDiff[1].sourceBuffer(&_dma_spi_tcr_deassert, 4);
-        _dmasettingsDiff[1].destination(_pimxrt_spi->TCR);
-        _dmasettingsDiff[1].TCD->ATTR_DST = 2;
-        _dmasettingsDiff[1].replaceSettingsOnCompletion(_dmasettingsDiff[2]);
-
-        _dmasettingsDiff[2].sourceBuffer(_fb + x + (y * ILI9341_T4_TFTWIDTH), 2 * len);
-        _dmasettingsDiff[2].destination(_pimxrt_spi->TDR);
-        _dmasettingsDiff[2].TCD->ATTR_DST = 1;
-        _dmasettingsDiff[2].replaceSettingsOnCompletion(_dmasettingsDiff[1]);
-        _dmasettingsDiff[2].interruptAtCompletion();
-        _dmasettingsDiff[2].disableOnCompletion();
-
-        _dmatx = _dmasettingsDiff[1];
-
+        _dmatx.sourceBuffer(_fb + x + (y * ILI9341_T4_TFTWIDTH), 2 * len);
+        _dmatx.destination(_pimxrt_spi->TDR);
+        _dmatx.TCD->ATTR_DST = 1;
+        _dmatx.interruptAtCompletion();
+        _dmatx.disableOnCompletion();
+        
         _dmatx.triggerAtHardwareEvent(_spi_hardware->tx_dma_channel);
         if (_spi_num == 0) _dmatx.attachInterrupt(_dmaInterruptSPI0Diff);
         else if (_spi_num == 1) _dmatx.attachInterrupt(_dmaInterruptSPI1Diff);
@@ -1394,8 +1445,10 @@ namespace ILI9341_T4
         _pimxrt_spi->SR = 0x3f00;
         _pimxrt_spi->FCR = LPSPI_FCR_TXWATER(2);  // CHOOSING LPSPI_FCR_TXWATER(0) = 0 MAY BE MUCH SAFER (BUT SLOWER) ????
 
-        _pimxrt_spi->TCR = _dma_spi_tcr_assert;
+        _dma_assert_dc();
         _pimxrt_spi->TDR = ILI9341_T4_RAMWR;
+
+        _dma_deassert_dc();
 
         NVIC_SET_PRIORITY(IRQ_DMA_CH0 + _dmatx.channel, ILI9341_T4_IRQ_PRIORITY);
         _dmatx.begin(false);
@@ -1454,33 +1507,31 @@ namespace ILI9341_T4
             return;
             }
         // new instruction
-        _pimxrt_spi->TCR = _dma_spi_tcr_assert;
         if (x != _prev_caset_x)
             {
+            _dma_assert_dc();
             _pimxrt_spi->TDR = ILI9341_T4_CASET;
-            _pimxrt_spi->TCR = _dma_spi_tcr_deassert;
+            _dma_deassert_dc();
             _pimxrt_spi->TDR = x;
-            _pimxrt_spi->TCR = _dma_spi_tcr_assert;
             _prev_caset_x = x;
             }
         if (y != _prev_paset_y)
             {
+            _dma_assert_dc();
             _pimxrt_spi->TDR = ILI9341_T4_PASET;
-            _pimxrt_spi->TCR = _dma_spi_tcr_deassert;
+            _dma_deassert_dc();
             _pimxrt_spi->TDR = y;
-            _pimxrt_spi->TCR = _dma_spi_tcr_assert;
             _prev_paset_y = y;
             }
-        _pimxrt_spi->TDR = ILI9341_T4_RAMWR;
 
+        _dmatx.sourceBuffer(_fb + x + (y * ILI9341_T4_TFTWIDTH), len * 2);
         _last_y = (ILI9341_T4_TFTWIDTH * y + x + len) / ILI9341_T4_TFTWIDTH;
         _stats_nb_uploaded_pixels += len;
 
-        _dmasettingsDiff[2].sourceBuffer(_fb + x + (y * ILI9341_T4_TFTWIDTH), len * 2);
-        _dmasettingsDiff[2].destination(_pimxrt_spi->TDR);
-        _dmasettingsDiff[2].TCD->ATTR_DST = 1;
-        _dmasettingsDiff[2].replaceSettingsOnCompletion(_dmasettingsDiff[1]);
-
+        _dma_assert_dc();
+        _pimxrt_spi->TDR = ILI9341_T4_RAMWR;
+        _dma_deassert_dc();
+     
         _dmatx.enable();
         return;
         }
@@ -1632,7 +1683,7 @@ namespace ILI9341_T4
 
 
     void ILI9341Driver::_waitTransmitComplete()
-        {
+        {           
         uint32_t tmp __attribute__((unused));
         while (_pending_rx_count)
             {
