@@ -219,7 +219,7 @@ ILI9341_T4::ILI9341Driver tft(CS_PIN, DC_PIN, SCK_PIN, MOSI_PIN, MISO_PIN, RST_P
 
 uint16_t fb[240*320]; // our memory framebuffer. The screen has size 320 x 240 with color in 16 bits - 565 format.  
 
-DMAMEM uint16_t fb_internal1[240*320];  // an 'internal' frame buffer for double buffering
+DMAMEM uint16_t fb_internal[240*320];  // an 'internal' frame buffer for double buffering
 
 ILI9341_T4::DiffBuffStatic<4096> diff1; // a first diff buffer with 4K memory (statically allocated)
 ILI9341_T4::DiffBuffStatic<4096> diff2; // and a second one (useful even for double buffering)
@@ -239,18 +239,18 @@ void setup()
   
   while(!tft.begin(SPI_WRITE_SPEED, SPI_READ_SPEED)); // intialization
       
-  tft.setRotation(0);                              // use the most efficient orientation (portrait mode)
-  tft.setFramebuffers(fb_internal1, fb_internal2); // registering 2 framebuffers: this activates triple buffering
-  tft.setDiffBuffers(&diff1, &diff2);              // registering 2 diff buffers: this activates differential updates
-  tft.setRefreshRate(120);                         // set the display refresh rate around 120Hz
-  tft.setVSyncSpacing(2);                          // enable vsync and set framerate = refreshrate/2 (typical choice)
+  tft.setRotation(0);                  // use the most efficient orientation (portrait mode)
+  tft.setFramebuffers(fb_internal);    // registering 1 internal framebuffer: this activates double buffering
+  tft.setDiffBuffers(&diff1, &diff2);  // registering 2 diff buffers: this activates differential updates
+  tft.setRefreshRate(120);             // set the display refresh rate around 120Hz
+  tft.setVSyncSpacing(2);              // enable vsync and set framerate = refreshrate/2 = 60Hz (typical choice)
   }
     
     
 void loop()
   {
-  draw_something_onto(fb);                         // draw the next frame onto fb
-  tft.update(fb);                                  // push the framebuffer. That's it !
+  draw_something_onto(fb);             // draw the next frame onto fb
+  tft.update(fb);                      // push the framebuffer. That's it !
   }
 ```
 
