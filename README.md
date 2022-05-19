@@ -1,3 +1,10 @@
+
+
+***NEW v1.0: The DC and CS pins can now be choosen to be any digital pin! (but setting DC to a CS capable pin will provide a subtantial speedup) !***
+
+***NEW v1.0: The driver should now work with display that do not have a CS pin.***
+
+
 # ILI9341_T4
 
 <p align="center">
@@ -38,22 +45,27 @@ In particular, the following advanced features are available:
 
 ### 0. Physical setup / wiring
 
-The library uses a special wiring scheme where the `DC` and and `CS` pin are inverted: the `DC` pin from the ILI9341 screen must be connected to a cs capable pin on the Teensy (and the `CS` pin from the ILI9341 screen can be connected to any other pin on the Teensy). 
+The library can work with any SPI bus (and mutliples instances of the driver can manage mulitple displays on different spi bus. Yet, a significant speedup is possible when the DC pin from the ILI9341 screen is connected to a CS (chip select) capable pin on the Teensy (yes, this requirement may seems weird at first...). In that case, the library will use the transmit FIFO/DMA to its full capacity and it will provide a nice speed up (around 35% faster framerate) while reducing the busy time (by around 50%). 
 
-On teensy 4/4.1, one can use either SPI0 or SPI1 (SPI2 might alos work but is not readily accessible). Here are possible wiring in both cases:
+**ADVICE: Set DC to a CS capable pin of the Teensy whenever possible (the CS pin from the screen can be connected to any pin on the Teensy, it does not matter...)**
+
+On teensy 4/4.1, one can use either SPI0 or SPI1 (SPI2 might also work but it is not readily accessible). Here are possible wirings in both cases:
 
 ILI9341 SCREEN | TEENSY 4/4.1 (SPI0) | TEENSY 4/4.1 (SPI1) |NOTE
 --- | --- | --- | ---
 VCC |  | | power from +3.6V to +5.5V
 GND |  | | connects to ground, obviously
-CS  | PIN 9 | PIN 30 | any digital pin will do
-RESET | PIN 6 | PIN29 | any digital pin will do
-DC | PIN 10 | PIN 0 |  
-SDI (MOSI) | PIN 11 | PIN 26|
-SCK | PIN 13 | PIN27 |
+CS  | PIN 9 | PIN 30 | Optional (but recommended). Any digital pin will do, 255 if not connected
+RESET | PIN 6 | PIN29 | Optional (but recommended). Any digital pin will do, 255 if not connected
+DC | PIN 10 | PIN 0 |  Mandatory. Any pin will do but choose a CS capable pin whenever possible !
+SDI (MOSI) | PIN 11 | PIN 26| Mandatory.
+SCK | PIN 13 | PIN27 | Mandatory
 LED | | | connect to +3.3V through a small resistor (50 Ohm)
-SDO (MISO) | PIN 12 | PIN 1 |  
+SDO (MISO) | PIN 12 | PIN 1 |  Mandatory
 
+**Remarks**
+- If CS = 255, do not forget to connect the CS pin from the display (if present) to GND.
+- If RST = 255, do not forget to connect the RST pin from the display to 3.3V 
 
 ### 1. Including the library 
 
@@ -74,8 +86,7 @@ ILI9341_T4::ILI9341Driver tft( CS_PIN, DC_PIN, SCK_PIN, MOSI_PIN, MISO_PIN, RST_
 ```
 The `TOUCH_CS` and `TOUCH_IRQ` pin should be specified only if the screen has an associated XPT2046 touchscreen **on the same spi bus as the screen**, otherwise, just omit the last two parameters. 
 
-**IMPORTANT: The `DC` pin MUST be a valid chip select pin for the corresponding spi bus !** On the other hand, `CS` can be any digital pin (yes, this requirement may seem weird at first). 
-
+**Remark.** The `DC_PIN`, `SCK_PIN`, `MOSI_PIN`, `MISO_PIN` are mandatory, the other one can be set to 255. If possible, use a valid CS pin for DC to benefit from hardare speedup. 
 
 #### (b) Memory framebuffers
 
@@ -90,7 +101,7 @@ DMAMEM uint16_t fb_internal2[240*320];  // and a third for triple buffering (op
 ```
 The buffers above have been placed in the upper 512K (dmamem) portion of the memory to preserve the RAM in the faster lower portion (dtcm). The buffers can be placed anywhere in RAM (even in EXTMEM if external ram is present but there will be a huge speed penalty in that case).
 
-**Remark.** Not using any internal framebuffer is possible but then asynchronous and differential updates will be disabled, removing most of the library benefit... COnversely, triple buffering is a overkill and usually does not provide any significant improvement over double buffering (and require an additional 150KB of RAM). **ADVICE: use double buffering !** 
+**Remark.** Not using any internal framebuffer is possible but, in that case, asynchronous and differential updates will be disabled, thus removing most of the library benefit... Conversely, triple buffering is overkill and usually does not provide any significant improvement over double buffering (while requiring an additional 150KB of RAM). **ADVICE: use double buffering !** 
 
 
 #### (c) Diff buffers
@@ -224,6 +235,7 @@ void draw_something_onto(uint16_t * fb)
 
 void setup()
   {
+  tft.output(&Serial); // info/warning/error messages should be sent to Serial. 
   if (!tft.begin(SPI_WRITE_SPEED, SPI_READ_SPEED))
       Serial.print("ouch !")
       
@@ -247,6 +259,8 @@ Complete examples can be found in the `/examples` sub-directory of the library.
 
 ## Tips and tricks
 
+- **The `output(&Stream)`**. By default, the driver is silent. To output debug/error message, you can indicate a pointer to the stream object that should be used (for example `Serial`). 
+ 
 - **The `setDiffGap()` method.** When using differential updates, the driver tries to be smart and find a compromise between skipping unchanged pixels but also not fragmenting spi transactions  too much because issuing a re-positioning commands also takes times. To adjust this behaviour, the `setDiffGap()` can be used to specify the number of consecutive unchanged pixels required to break a spi transaction. Typical value should range between 3 and 40. Smaller gaps can provide a speed bump but will require larger diff buffers (possibly up to 10K when using a gap of size 4). It is possible to get statistics on diff buffer memory consumption with the `.printStats()` method applied directly to the diff buffer (not to the tft object). If the diff buffer overflows too often, its size should be increased. 
 
 - **Disabling differential update for a given frame**. Differential updates are beneficial in most cases unless almost all the pixels change in a frame. In this case, there will be no increase in upload speed. Yet, calculating the diff log takes around 1ms of the MCU compute time per frame. When using two diff buffers, this computation is done during async. update so it should not slow down the framerate but it can still be beneficial to skip this computation if you know for sure that the diff will be mostly trivial. You can tell the driver to upload a given frame as is, without computing the diff, by setting the second (facultative) parameter in the update method to true:
