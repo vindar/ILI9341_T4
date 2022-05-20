@@ -1639,11 +1639,25 @@ private:
 
     /** Set the timer to ring when micros() reaches ustime */
     void _setTimerAt(uint32_t ustime, methodCB_t timercb) __attribute__((always_inline))
-    {
+        {
         const uint32_t m = micros();
-        const int32_t d = (int32_t)(ustime - m);
-        _setTimerIn((d < 1) ? 1 : (uint32_t)d, timercb); // asap if d <= 0 or more than 1 seconds. 
-    }
+        const uint32_t max_us = (max(_vsync_spacing, 1) + 1) * _period;
+        uint32_t us;
+        if (ustime <= m)
+            {
+            us = 1; 
+            }
+        else if (ustime > m + max_us)
+            {
+            us = max_us;
+            _printf("Abnormally large value for setTimerAt() : %d us", ustime - m);
+            }
+        else
+            {
+            us = ustime - m;
+            }
+        _setTimerIn(us, timercb);
+        }
 
 
     /** Cancel the timer (if ticking). */

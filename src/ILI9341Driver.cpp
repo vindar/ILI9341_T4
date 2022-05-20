@@ -1300,14 +1300,10 @@ namespace ILI9341_T4
             _dmaObject[_spi_num] = nullptr;
             if (_vsync_spacing > 0)
                 { // note the next time. 
-                uint32_t t1 = micros() + _microToReachScanLine(0, true);
-                uint32_t t2 = _timeframestart + (_vsync_spacing * _period);
-                if ((t1 - t2 < _period / 3) && (t2 - t1 < _period / 3)) { t2 = t1; }// same frame. 
-                uint32_t tfs = ((_late_start_ratio_override) || (t1 > t2) || (t2 - t1 > (ILI9341_T4_MAX_VSYNC_SPACING + 1) * _period)) ? t1 : t2;
-                if (tfs < _timeframestart) tfs = t2;
+                uint32_t t1 = micros() + _microToReachScanLine(0, true) - _vsync_spacing  * _period;
+                if (t1 > _timeframestart) _timeframestart = t1; 
                 _late_start_ratio_override = false;
-                _last_delta = (int)round(((double)(tfs - _timeframestart)) / (_period));  // number of refresh between this frame and the previous one. 
-                _timeframestart = tfs;
+                _last_delta = _vsync_spacing;
                 }
             _endframe();
             if (_touch_request_read)
