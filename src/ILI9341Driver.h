@@ -963,7 +963,7 @@ public:
     *           redrawNow=false.  
     *
     *       (3) For this method, TWO diff buffers are required to use differntial updates,
-    *           On the other hand, one one internal framebuffer is used (setting a second one is
+    *           On the other hand, only one internal framebuffer is used (setting a second one is
     *           useless).
     *
     * ADVICE: USE DOUBLE BUFFERING (I.E. 1 INTERNAL FRAMEBUFFER) WITH 2 DIFF BUFFERS (WITH SIZE
