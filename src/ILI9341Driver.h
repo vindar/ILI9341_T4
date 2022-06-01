@@ -1422,12 +1422,7 @@ private:
     volatile uint8_t _dma_state;                // DMA current status
 
     DMAChannel _dmatx;                          // the dma channel object. 
-
-    DMASetting          _dmasettingsDiff[3];    // dma settings chain
   
-    volatile uint32_t   _dma_spi_tcr_deassert;  // TCR value for deasserting DC
-    volatile uint32_t   _dma_spi_tcr_assert;    // TCR value for asserting DC
-
     int                 _prev_caset_x;          // previous position set with the caset command
     int                 _prev_paset_y;          // previous position set with the paset command
 
@@ -1436,6 +1431,34 @@ private:
     static void _dmaInterruptSPI2Diff() { if (_dmaObject[2]) { _dmaObject[2]->_dmaInterruptDiff(); } } // called when using spi 2
 
     void _dmaInterruptDiff(); // called when doing partial diff redraw
+
+
+    static void _spiInterruptSPI0() { _dmaObject[0]->_spiInterrupt(); }    
+    static void _spiInterruptSPI1() { _dmaObject[1]->_spiInterrupt(); } 
+    static void _spiInterruptSPI2() { _dmaObject[2]->_spiInterrupt(); }
+
+    // called when doing partial diff redraw
+    inline void _spiInterrupt() __attribute__((always_inline))
+        {
+        _toggle(_dcport, _dcpinmask);
+        if (_spi_int_phase >= 0)
+            {            
+            _pimxrt_spi->TDR = _spi_int_command[_spi_int_phase];
+            _pimxrt_spi->TCR = (_spi_int_phase & 1) ? (_dma_spi_tcr_assert) : (_dma_spi_tcr_deassert);
+            _spi_int_phase--;
+            }
+        else
+            {      
+            _pimxrt_spi->IER = 0; // disable interrupt            
+            _dmatx.enable();
+            }
+        _pimxrt_spi->SR = 0x3f00; //Reset All flags and errors    
+        asm("dsb");
+        }
+
+    int        _spi_int_phase;         // current phase for the spi interrupt
+    uint32_t   _spi_int_command[5];    // command to execute
+
 
 
     /** set/remove  the callback at end of transfer */
@@ -1780,6 +1803,10 @@ private:
     uint32_t _tcr_dc_assert;                    // mask for the TCR register when DC is asserted (low)
     uint32_t _tcr_dc_not_assert;                // mask for the TCR register when DC is not asserted (high)
 
+    volatile uint32_t  _dma_spi_tcr_deassert;   // TCR value for deasserting DC
+    volatile uint32_t  _dma_spi_tcr_assert;     // TCR value for asserting DC
+
+
     uint8_t _pending_rx_count;                  // hack ...
 
 
@@ -1944,7 +1971,7 @@ private:
 
     void _directWriteHigh(volatile uint32_t* base, uint32_t mask) __attribute__((always_inline)) { *(base + 33) = mask; }
 
-
+    void _toggle(volatile uint32_t* base, uint32_t mask) __attribute__((always_inline)) { *(base + 35) = mask; }
 
 
     /**********************************************************************************************************
