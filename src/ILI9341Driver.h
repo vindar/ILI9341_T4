@@ -76,8 +76,8 @@ namespace ILI9341_T4
 #define ILI9341_T4_NB_PIXELS (ILI9341_T4_TFTWIDTH * ILI9341_T4_TFTHEIGHT)   // total number of pixels
 
 #define ILI9341_T4_MAX_VSYNC_SPACING 10             // maximum number of screen refresh between frames (for sync clock stability). 
-#define ILI9341_T4_IRQ_PRIORITY 128                 // priority at which we run the irqs (dma and pit timer).
-#define ILI9341_T4_MAX_DELAY_MICROSECONDS 1000000    // maximum waiting time (1 second)
+#define ILI9341_T4_IRQ_PRIORITY 128                 // priority at which we run the irqs (dma, pit timer and spi interrupts).
+#define ILI9341_T4_MAX_DELAY_MICROSECONDS 1000000   // maximum waiting time (1 second)
 
 #define ILI9341_T4_TOUCH_Z_THRESHOLD     400        // for touch
 #define ILI9341_T4_TOUCH_Z_THRESHOLD_INT 75         // same as https://github.com/PaulStoffregen/XPT2046_Touchscreen/blob/master/XPT2046_Touchscreen.cpp
@@ -199,12 +199,10 @@ public:
     *
     * - The reset pin is optional: set it to 255 if not present.
     * 
-    * - The backlight pin is not managed by the driver. Don't forget to turn in on, I always do...
+    * - The backlight pin is not managed by the driver. Don't forget to turn in on...
     *
-    * --------------------------------------------------------------------------------------------
-    * - THE DC PIN MUST BE ONE OF THE HARDWARE CHIP SELECT PINS OF THE CORRESPONDING SPI BUS.
-    *   The CS pin on the other hand can be any other digital pin.
-    *--------------------------------------------------------------------------------------------
+    * - THE DC PIN SHOULD BE ONE OF THE HARDWARE CHIP SELECT PINS OF THE CORRESPONDING SPI BUS IF
+    *   POSSIBLE (using another pin will work but will be less efficient).
     * 
     * - The touch_cs (and touch_irq) pins are optional. They should be set if and only  if the 
     *   XPT2048 touchscreen is present AND ON THE SAME SPI BUS THAT DRIVES THE DISPLAY.
@@ -220,7 +218,7 @@ public:
 
 
     /**
-    * Set the output Stream used by the drier for displaying infos. 
+    * Set the output Stream used by the driver for displaying infos. 
     *
     * Set this to nullptr to prevent sending any information. 
     * 
@@ -356,7 +354,7 @@ public:
     * -> these methods determine the screen orientation which affects the framebuffer dimensions and it 
     *    layout.
     *    Whenever possible, portrait orientation 0 should be used as it is the one for which creating
-    *    diff is fastest. Using another orinetation will result in about 500us penalty when creating the 
+    *    diff is fastest. Using another orientation will result in a small penalty when creating the 
     *    diff buffer (which should not be a problem in most case anyway). 
     ****************************************************************************************************
     ****************************************************************************************************/
@@ -422,7 +420,7 @@ public:
     * Screen refresh rate. 
     * 
     * -> these methods are used to set the screen refresh rate (number of time the screen is refresh 
-    *    per second). THis rate is important because it is related to the actual framerate via the 
+    *    per second). This rate is important because it is related to the actual framerate via the 
     *    vsync_spacing parameter (c.f. the vsync setting sdection). 
     *
     ****************************************************************************************************
@@ -438,7 +436,7 @@ public:
     * NOTE: the refresh rate for a given mode varies from display to display. 
     * Once the mode set, use getRefreshRate() to find out the refresh rate.
     *
-    * By default the refresh mode selcted is 0 (fastest possible). 
+    * By default the refresh mode selected is 0 (fastest possible). 
     * 
     * Remark: calling this method reset the statistics.
     **/
@@ -690,7 +688,7 @@ public:
     * which can drastically reduce the upload time and therefore provide a boost on the effective framerate. 
     * 
     * In order to use differential update, the driver must 'know' the current screen content which means that 
-    * buffering (either double or triople) must be active. Thus, to enable differential update, you must both 
+    * buffering (either double or triple) must be active. Thus, to enable differential update, you must both 
     * set at  least 1 diff buffer and 1 internal framebuffer. 
     * 
     * Setting a second diff buffer is optionnal in double buffering mode but can increase the framerate as it 
@@ -716,7 +714,7 @@ public:
 
 
     /**
-    * Query whether we perform full update of differential updates. 
+    * Query whether we perform full update or differential updates. 
     * 
     * Differential updates are enabled as soon as the two conditions are meet:
     * 
@@ -793,7 +791,7 @@ public:
     * Set the compare mask by specifying for each color channel the number of lower bits
     * that should be ignored. 
     * 
-    * Recall the there are 5 bits for the blue and  red channel and 6 bits for the green one. 
+    * Recall that there are 5 bits for the blue and  red channel and 6 bits for the green one. 
     **/
     void setDiffCompareMask(int bitskip_red, int bitskip_green, int bitskip_blue)
         {
@@ -1433,13 +1431,14 @@ private:
     void _dmaInterruptDiff(); // called when doing partial diff redraw
 
 
-    static void _spiInterruptSPI0() { _dmaObject[0]->_spiInterrupt(); }    
-    static void _spiInterruptSPI1() { _dmaObject[1]->_spiInterrupt(); } 
-    static void _spiInterruptSPI2() { _dmaObject[2]->_spiInterrupt(); }
+    static void _spiInterruptSPI0_software() { _dmaObject[0]->_spiInterrupt_software(); }
+    static void _spiInterruptSPI1_software() { _dmaObject[1]->_spiInterrupt_software(); }
+    static void _spiInterruptSPI2_software() { _dmaObject[2]->_spiInterrupt_software(); }
 
     // called when doing partial diff redraw
-    inline void _spiInterrupt() __attribute__((always_inline))
+    inline void _spiInterrupt_software() __attribute__((always_inline))
         {
+        //noInterrupts();        // UNNEEDED ?
         _toggle(_dcport, _dcpinmask);
         if (_spi_int_phase >= 0)
             {            
@@ -1454,7 +1453,28 @@ private:
             }
         _pimxrt_spi->SR = 0x3f00; //Reset All flags and errors    
         asm("dsb");
+        //interrupts();        // UNNEEDED ?
         }
+
+
+    static void _spiInterruptSPI0_hardware() { _dmaObject[0]->_spiInterrupt_hardware(); }
+    static void _spiInterruptSPI1_hardware() { _dmaObject[1]->_spiInterrupt_hardware(); }
+    static void _spiInterruptSPI2_hardware() { _dmaObject[2]->_spiInterrupt_hardware(); }
+
+    // called when doing partial diff redraw
+    inline void _spiInterrupt_hardware() __attribute__((always_inline))        
+        {
+        //noInterrupts();        // UNNEEDED ?
+        _pimxrt_spi->IER = 0; // disable interrupt
+        _pimxrt_spi->SR = 0x3f00; //Reset All flags and errors    
+        //asm("dsb");  // not needed in this case because we disable the interrupt ? 
+        _restartCpuTime();
+        _stats_nb_transactions++; // count a spi transaction
+        _subFrameInterruptDiff();
+        _pauseCpuTime();
+        //interrupts();        // UNNEEDED ?
+        }
+
 
     int        _spi_int_phase;         // current phase for the spi interrupt
     uint32_t   _spi_int_command[5];    // command to execute

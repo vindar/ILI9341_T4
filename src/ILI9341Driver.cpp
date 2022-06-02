@@ -250,27 +250,28 @@ namespace ILI9341_T4
             _dcpinmask = digitalPinToBitMask(_dc);
             pinMode(_dc, OUTPUT);
             _directWriteHigh(_dcport, _dcpinmask);
-
-            // attach interrupt            
-            switch (_spi_num)
-                {
-                case 0: 
-                    attachInterruptVector(IRQ_LPSPI4, _spiInterruptSPI0);
-                    NVIC_SET_PRIORITY(IRQ_LPSPI4, ILI9341_T4_IRQ_PRIORITY);
-                    NVIC_ENABLE_IRQ(IRQ_LPSPI4);
-                    break;
-                case 1:
-                    attachInterruptVector(IRQ_LPSPI3, _spiInterruptSPI1);
-                    NVIC_SET_PRIORITY(IRQ_LPSPI3, ILI9341_T4_IRQ_PRIORITY);
-                    NVIC_ENABLE_IRQ(IRQ_LPSPI3);
-                    break;
-                case 2:
-                    attachInterruptVector(IRQ_LPSPI1, _spiInterruptSPI2);
-                    NVIC_SET_PRIORITY(IRQ_LPSPI1, ILI9341_T4_IRQ_PRIORITY);
-                    NVIC_ENABLE_IRQ(IRQ_LPSPI1);
-                    break;
-                }
             }           
+
+        // attach interrupt            
+        switch (_spi_num)
+            {
+            case 0:
+                attachInterruptVector(IRQ_LPSPI4, (_hardware_dc) ? _spiInterruptSPI0_hardware : _spiInterruptSPI0_software);
+                NVIC_SET_PRIORITY(IRQ_LPSPI4, ILI9341_T4_IRQ_PRIORITY);
+                NVIC_ENABLE_IRQ(IRQ_LPSPI4);
+                break;
+            case 1:
+                attachInterruptVector(IRQ_LPSPI3, (_hardware_dc) ? _spiInterruptSPI1_hardware : _spiInterruptSPI1_software);
+                NVIC_SET_PRIORITY(IRQ_LPSPI3, ILI9341_T4_IRQ_PRIORITY);
+                NVIC_ENABLE_IRQ(IRQ_LPSPI3);
+                break;
+            case 2:
+                attachInterruptVector(IRQ_LPSPI1, (_hardware_dc) ? _spiInterruptSPI2_hardware : _spiInterruptSPI2_software);
+                NVIC_SET_PRIORITY(IRQ_LPSPI1, ILI9341_T4_IRQ_PRIORITY);
+                NVIC_ENABLE_IRQ(IRQ_LPSPI1);
+                break;
+            }
+
 
         _maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(7)); // drive DC high now. 
 
@@ -1457,11 +1458,13 @@ namespace ILI9341_T4
         _pimxrt_spi->SR = 0x3f00;
 
         if (_hardware_dc)
-            {
-            _pimxrt_spi->FCR = LPSPI_FCR_TXWATER(2); 
+            {            
+            _pimxrt_spi->FCR = LPSPI_FCR_TXWATER(2); // DO NOT CHANGE, WE NEED TO HAVE ALWAYS 14 WORD AVALAILABLE IN TX !!!
             }
         else
-            {
+            { 
+            // optimization depending on the spi speed. 
+            // we want to start before the end of the last DMA transfer but not to early otherwise we will wait. 
             if (_spi_clock < 50000000) _pimxrt_spi->FCR = LPSPI_FCR_TXWATER(0);
             else if (_spi_clock < 80000000) _pimxrt_spi->FCR = LPSPI_FCR_TXWATER(1);
             else _pimxrt_spi->FCR = LPSPI_FCR_TXWATER(2);
@@ -1471,10 +1474,12 @@ namespace ILI9341_T4
         _pimxrt_spi->TDR = ILI9341_T4_RAMWR;
         _dma_deassert_dc();
 
+        noInterrupts();
         NVIC_SET_PRIORITY(IRQ_DMA_CH0 + _dmatx.channel, ILI9341_T4_IRQ_PRIORITY);
-        _dmatx.begin(false);
+        _dmatx.begin(false);        
         _dmatx.enable(); // go !
         NVIC_SET_PRIORITY(IRQ_DMA_CH0 + _dmatx.channel, ILI9341_T4_IRQ_PRIORITY);
+        interrupts();
         _pauseCpuTime();
         }
 
@@ -1530,35 +1535,48 @@ namespace ILI9341_T4
         // new instruction        
         if (_hardware_dc)
             { 
-            // give all commands directly using the FIFO and hardware toogle of DC         
-            // This code also works if dc is not on a hardware cs pin (but has busy waits). 
+            // give all commands directly using the FIFO and hardware toogle of DC                    
             if (x != _prev_caset_x)
                 {
-                _dma_assert_dc();
+                _pimxrt_spi->TCR = _dma_spi_tcr_assert;
                 _pimxrt_spi->TDR = ILI9341_T4_CASET;
-                _dma_deassert_dc();
+                _pimxrt_spi->TCR = _dma_spi_tcr_deassert;
                 _pimxrt_spi->TDR = x;
                 _prev_caset_x = x;
                 }
             if (y != _prev_paset_y)
                 {
-                _dma_assert_dc();
+                _pimxrt_spi->TCR = _dma_spi_tcr_assert;
                 _pimxrt_spi->TDR = ILI9341_T4_PASET;
-                _dma_deassert_dc();
+                _pimxrt_spi->TCR = _dma_spi_tcr_deassert;
                 _pimxrt_spi->TDR = y;
                 _prev_paset_y = y;
                 }
 
-            _dmatx.sourceBuffer(_fb + x + (y * ILI9341_T4_TFTWIDTH), len * 2);
+            _pimxrt_spi->TCR = _dma_spi_tcr_assert;
+            _pimxrt_spi->TDR = ILI9341_T4_RAMWR;
+            _pimxrt_spi->TCR = _dma_spi_tcr_deassert;
+
+            const uint16_t* p = _fb + x + (y * ILI9341_T4_TFTWIDTH);
             _last_y = (ILI9341_T4_TFTWIDTH * y + x + len) / ILI9341_T4_TFTWIDTH;
             _stats_nb_uploaded_pixels += len;
 
-            _dma_assert_dc();
-
-            _pimxrt_spi->TDR = ILI9341_T4_RAMWR;
-            _dma_deassert_dc();
-
-            _dmatx.enable();
+            if (len < 4)
+                { // short buffer, use the fifo
+                _pimxrt_spi->TDR = p[0];
+                if (len >= 2)
+                    {
+                    _pimxrt_spi->TDR = p[1];
+                    if (len >= 3) _pimxrt_spi->TDR = p[2];
+                    }
+                _pimxrt_spi->SR = 0x3f00; // clear flag
+                _pimxrt_spi->IER = LPSPI_IER_TDIE; // interrupt when only 2 words remain in the fifo
+                }
+            else
+                { // long buffer, use DMA. 
+                _dmatx.sourceBuffer(p, len * 2);
+                _dmatx.enable();
+                }
             }
         else
             { // use the SPI interrupt to synchronize DC toogling without busy wait
@@ -1586,7 +1604,7 @@ namespace ILI9341_T4
             _stats_nb_uploaded_pixels += len;
            
             // make sure previous dma transfer is finished and assert DC and set frame(7)
-            _dma_assert_dc();
+            _dma_assert_dc(); // THIS IS THE ONLY BUSY WAIT: TXWATER is choosen to minimize this wait according to the SPI speed
 
             // clear flags
             _pimxrt_spi->SR = 0x3f00;
@@ -1605,12 +1623,12 @@ namespace ILI9341_T4
 
     void ILI9341Driver::_subFrameInterruptDiff2()
         {
-        noInterrupts();
+        //noInterrupts();        // UNNEEDED ?
         _restartUploadTime();
         _restartCpuTime();
         _subFrameInterruptDiff();
         _pauseCpuTime();
-        interrupts();
+        //interrupts();        // UNNEEDED ?
         }
 
 
@@ -1624,14 +1642,14 @@ namespace ILI9341_T4
 
     void ILI9341Driver::_dmaInterruptDiff()
         { 
-        noInterrupts();
+        //noInterrupts();        // UNNEEDED ?
         _dmatx.clearInterrupt();
         _dmatx.clearComplete();
         _restartCpuTime();
         _stats_nb_transactions++; // count a spi transaction
         _subFrameInterruptDiff();
         _pauseCpuTime();
-        interrupts();        
+        //interrupts();        // UNNEEDED ?
         return;
         }
 
