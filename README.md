@@ -1,8 +1,9 @@
 
+***NEW v1.1: Improved performance: update consume less CPU time (around 30% less) for both hardware/software DC pins***
 
 ***NEW v1.0: The DC and CS pins can now be choosen to be any digital pin! (but setting DC to a CS capable pin will provide a subtantial speedup) !***
 
-***NEW v1.0: The driver should now work with display that do not have a CS pin.***
+***NEW v1.0: The driver should now work with displays that do not have a CS pin.***
 
 
 # ILI9341_T4
