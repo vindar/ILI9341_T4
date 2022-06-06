@@ -85,6 +85,11 @@ namespace ILI9341_T4
 
 #define ILI9341_T4_SELFDIAG_OK 0xC0                 // value returned by selfDiagStatus() if everything is OK.
 
+#define ILI9441_T4_DEFAULT_FPS_COUNTER_COLOR_FG 0xFFFF  // default values (color/opacity/position)
+#define ILI9441_T4_DEFAULT_FPS_COUNTER_COLOR_BG 0x001F  // for the FPS counter
+#define ILI9441_T4_DEFAULT_FPS_COUNTER_OPACITY 0.5f     // 
+#define ILI9441_T4_DEFAULT_FPS_COUNTER_POSITION 0xFFFF  //
+
 
 /** ILI9341 command codes */
 
@@ -1018,6 +1023,20 @@ public:
 
 
     /**
+    * Draw the FPS counter on a corner of the framebuffer with given colors and opacity. 
+    * Call this method just before update() to display the instantaneous framerate. 
+    * 
+    * position: 0= top right,  1=bottom right,  3=bottom left,  4=top left
+    * 
+    **/
+    void overlayFPS(uint16_t* fb, 
+                    int position = ILI9441_T4_DEFAULT_FPS_COUNTER_POSITION, 
+                    uint16_t fg_color = ILI9441_T4_DEFAULT_FPS_COUNTER_COLOR_FG, 
+                    uint16_t bk_color = ILI9441_T4_DEFAULT_FPS_COUNTER_COLOR_BG, 
+                    float opacity = ILI9441_T4_DEFAULT_FPS_COUNTER_OPACITY);
+
+
+    /**
     * Reset all statistics
     **/
     void statsReset(); 
@@ -1036,10 +1055,23 @@ public:
 
 
     /**
-    * Return the average framerate in Hz which is simply the number of 
-    * frame drawn divided the total time. 
+    * Return the 'average' framerate in Hz which is simply computed as the 
+    * total number of frame drawn divided the total time since the last rest. 
     **/
     float statsFramerate() const { return  (_stats_nb_frame == 0) ? 0.0f : ((_stats_nb_frame * 1000.0f) / _stats_elapsed_total); }
+
+
+    /**
+    * Return the instantaneous FPS i.e. the number of frames displayed during
+    * the previous second.
+    **/
+    uint32_t statsCurrentFPS() const { return _stats_current_fps;  }
+
+
+    /**
+    * Return an object containing statistics about the instantaneous FPS.
+    **/
+    StatsVar statsFPS() const { return _statsvar_fps; }
 
 
     /**
@@ -1312,6 +1344,10 @@ private:
 
     /** called when fb2 is full and must be drawn on the screen */
     void _buffer2fullCB();
+
+
+    /** the main update method */
+    void _update(const uint16_t* fb, bool force_full_redraw);
 
 
     /**
@@ -1722,6 +1758,54 @@ private:
 
 
     /**********************************************************************************************************
+    * Drawing characters
+    * (adapted from the tgx library)
+    ***********************************************************************************************************/
+
+    static inline uint16_t _blend32(uint32_t bg_col, uint32_t fg_col, uint32_t a)
+        {
+        const uint32_t bg = (bg_col | (bg_col << 16)) & 0b00000111111000001111100000011111;
+        const uint32_t fg = (fg_col | (fg_col << 16)) & 0b00000111111000001111100000011111;
+        const uint32_t result = ((((fg - bg) * a) >> 5) + bg) & 0b00000111111000001111100000011111;
+        return (uint16_t)((result >> 16) | result); // contract result
+        }
+
+
+    static inline uint32_t _fetchbit(const uint8_t* p, uint32_t index) { return (p[index >> 3] & (0x80 >> (index & 7))); }
+
+
+    static uint32_t _fetchbits_unsigned(const uint8_t* p, uint32_t index, uint32_t required);
+
+
+    static uint32_t _fetchbits_signed(const uint8_t* p, uint32_t index, uint32_t required);
+
+
+    static bool _clipit(int& x, int& y, int& sx, int& sy, int& b_left, int& b_up, int lx, int ly);
+
+
+    static void _measureChar(char c, int pos_x, int pos_y, int & min_x, int & max_x, int & min_y, int & max_y, const void* pfont, int & xadvance);
+
+
+    static void _measureText(const char* text, int pos_x, int pos_y, int& min_x, int& max_x, int& min_y, int& max_y, const void* pfont, bool start_newline_at_0);
+
+
+    static void _drawTextILI(const char* text, int& pos_x, int  pos_y, uint16_t col, const void* pfont, bool start_newline_at_0, int lx, int ly, int stride, uint16_t* buffer, float opacity);
+
+
+    static void _drawCharILI(char c, int & pos_x, int & pos_y, uint16_t col, const void * pfont, int lx, int ly, int stride, uint16_t* buffer, float opacity);
+
+
+    static void _drawCharBitmap_4BPP(const uint8_t* bitmap, int rsx, int b_up, int b_left, int sx, int sy, int x, int y, uint16_t col, int stride, uint16_t* buffer, float opacity);
+
+
+    static void _fillRect(int xmin, int xmax, int ymin, int ymax, int lx, int ly, int stride, uint16_t* buffer, uint16_t color, float opacity);
+
+
+  
+
+
+
+    /**********************************************************************************************************
     * About Stats
     ***********************************************************************************************************/
 
@@ -1748,6 +1832,15 @@ private:
     StatsVar        _statsvar_vsyncspacing;     // statistics about the effective vsync_spacing
 
     uint32_t        _nbteared;                  // number of frame for which screen tearing may have occured. 
+
+
+    uint32_t        _stats_current_fps;         // current fps
+
+    StatsVar        _statsvar_fps;              // statistics about the framerate
+
+    elapsedMillis   _fps_counter;               // counter for the instant fps. 
+
+    uint32_t        _fps_ticks;                 // number of ticks. 
 
 
     void _startframe(bool vsynonc)

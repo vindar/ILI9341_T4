@@ -21,6 +21,8 @@
 
 
 #include "ILI9341Driver.h"
+#include "font_ILI9341_T4.h"
+
 #include <SPI.h>
 
 
@@ -774,7 +776,7 @@ namespace ILI9341_T4
         }
 
 
-    void ILI9341Driver::updateRegion(bool redrawNow, const uint16_t* fb, int xmin, int xmax, int ymin, int ymax, int stride)
+    FLASHMEM void ILI9341Driver::updateRegion(bool redrawNow, const uint16_t* fb, int xmin, int xmax, int ymin, int ymax, int stride)
         {
         if (stride < 0) stride = xmax - xmin + 1;
         switch (bufferingMode())
@@ -892,8 +894,14 @@ namespace ILI9341_T4
         }
         
 
-
     void ILI9341Driver::update(const uint16_t* fb, bool force_full_redraw)
+        {
+        if (fb == nullptr) return;
+        _update(fb, force_full_redraw);
+        }
+
+
+    FLASHMEM void ILI9341Driver::_update(const uint16_t* fb, bool force_full_redraw)
         {
         _ongoingDiff = nullptr; // here we just ignore possible ongoing diff and just redraw everything if _mirrorfb == nullptr. 
                                 // We could do better but don't care since its an edge case relevant only when swapping between 
@@ -1131,7 +1139,7 @@ namespace ILI9341_T4
         }
 
 
-    void ILI9341Driver::_updateNow(const uint16_t* fb, DiffBuffBase* diff)
+    FLASHMEM void ILI9341Driver::_updateNow(const uint16_t* fb, DiffBuffBase* diff)
         {
         if ((fb == nullptr) || (diff == nullptr)) return;
         waitUpdateAsyncComplete();
@@ -1240,7 +1248,7 @@ namespace ILI9341_T4
 
 
         
-    void ILI9341Driver::_updateRectNow(const uint16_t* sub_fb, int xmin, int xmax, int ymin, int ymax, int stride)
+    FLASHMEM void ILI9341Driver::_updateRectNow(const uint16_t* sub_fb, int xmin, int xmax, int ymin, int ymax, int stride)
         {
         int x1, x2, y1, y2;
         DiffBuffBase::rotationBox(_rotation, xmin, xmax, ymin, ymax, x1, x2, y1, y2);
@@ -1289,7 +1297,7 @@ namespace ILI9341_T4
 
 
 
-    void ILI9341Driver::_updateAsync(const uint16_t* fb, DiffBuffBase* diff)
+    FLASHMEM void ILI9341Driver::_updateAsync(const uint16_t* fb, DiffBuffBase* diff)
         {
         /*
         //override and use _updateNow instead
@@ -1786,6 +1794,374 @@ namespace ILI9341_T4
 
 
     /**********************************************************************************************************
+    * Drawing characters
+    * (adapted from the tgx library)
+    ***********************************************************************************************************/
+
+
+
+    uint32_t ILI9341Driver::_fetchbits_unsigned(const uint8_t* p, uint32_t index, uint32_t required)
+        {
+        uint32_t val;
+        uint8_t* s = (uint8_t*)&p[index >> 3];
+    #ifdef UNALIGNED_IS_SAFE        // is this defined anywhere ? 
+        val = *(uint32_t*)s; // read 4 bytes - unaligned is ok
+        val = __builtin_bswap32(val); // change to big-endian order
+    #else
+        val = s[0] << 24;
+        val |= (s[1] << 16);
+        val |= (s[2] << 8);
+        val |= s[3];
+    #endif
+        val <<= (index & 7); // shift out used bits
+        if (32 - (index & 7) < required) 
+            { // need to get more bits
+            val |= (s[4] >> (8 - (index & 7)));
+            }
+        val >>= (32 - required); // right align the bits
+        return val;
+        }
+
+
+    uint32_t ILI9341Driver::_fetchbits_signed(const uint8_t* p, uint32_t index, uint32_t required)
+        {
+        uint32_t val = _fetchbits_unsigned(p, index, required);
+        if (val & (1 << (required - 1))) 
+            {
+            return (int32_t)val - (1 << required);
+            }
+        return (int32_t)val;
+        }
+
+
+    bool ILI9341Driver::_clipit(int& x, int& y, int& sx, int& sy, int & b_left, int & b_up, int lx, int ly)
+        {
+        b_left = 0;
+        b_up = 0; 
+        if ((sx < 1) || (sy < 1) || (y >= ly) || (y + sy <= 0) || (x >= lx) || (x + sx <= 0))
+            { // completely outside of image
+            return false;
+            }
+        if (y < 0)
+            {
+            b_up = -y;
+            sy += y;
+            y = 0;
+            }
+        if (y + sy > ly)
+            {
+            sy = ly - y;
+            }
+        if (x < 0)
+            {
+            b_left = -x;
+            sx += x;
+            x = 0;
+            }
+        if (x + sx > lx)
+            {
+            sx = lx - x;
+            }
+        return true;
+        }
+
+
+
+    FLASHMEM void ILI9341Driver::_measureChar(char c, int pos_x, int pos_y, int& min_x, int& max_x, int& min_y, int& max_y, const void* pfont, int& xadvance)
+        {
+        const ILI9341_t3_font_t & font = *((const ILI9341_t3_font_t *)pfont);
+        uint8_t n = (uint8_t)c;
+        if ((n >= font.index1_first) && (n <= font.index1_last))
+            {
+            n -= font.index1_first;
+            }
+        else if ((n >= font.index2_first) && (n <= font.index2_last))
+            {
+            n = (n - font.index2_first) + (font.index1_last - font.index1_first + 1);
+            }
+        else
+            { // no char to draw
+            xadvance = 0;
+            return; // nothing to draw. 
+            }
+        uint8_t* data = (uint8_t*)font.data + _fetchbits_unsigned(font.index, (n * font.bits_index), font.bits_index);
+        int32_t off = 0;
+        uint32_t encoding = _fetchbits_unsigned(data, off, 3);
+        if (encoding != 0)
+            { // wrong/unsupported format
+            xadvance = 0;
+            return; 
+            }
+        off += 3;
+        const int sx = (int)_fetchbits_unsigned(data, off, font.bits_width);
+        off += font.bits_width;
+        const int sy = (int)_fetchbits_unsigned(data, off, font.bits_height);
+        off += font.bits_height;
+        const int xoffset = (int)_fetchbits_signed(data, off, font.bits_xoffset);
+        off += font.bits_xoffset;
+        const int yoffset = (int)_fetchbits_signed(data, off, font.bits_yoffset);
+        off += font.bits_yoffset;
+        xadvance = (int)_fetchbits_unsigned(data, off, font.bits_delta);
+        const int x = pos_x + xoffset;
+        const int y = pos_y - sy - yoffset;
+        min_x = x;
+        max_x = x + sx - 1;
+        min_y = y;
+        max_y = y + sy - 1;
+        }
+
+
+    FLASHMEM void ILI9341Driver::_measureText(const char* text, int pos_x, int pos_y, int& min_x, int& max_x, int& min_y, int& max_y, const void * pfont, bool start_newline_at_0)
+        {
+        const int startx = start_newline_at_0 ? 0 : pos_x;        
+        min_x = pos_x; 
+        max_x = pos_x; 
+        min_y = pos_y; 
+        max_y = pos_y;        
+        const size_t l = strlen(text);
+        for (size_t i = 0; i < l; i++)
+            {
+            const char c = text[i];
+            if (c == '\n')
+                {
+                pos_x = startx;
+                pos_y += ((const ILI9341_t3_font_t*)pfont)->line_space;
+                }
+            else
+                {
+                int xa = 0;
+                int mx = min_x; 
+                int Mx = max_x;
+                int my = min_y;
+                int My = max_y;
+                _measureChar(c, pos_x, pos_y, mx, Mx, my, My, pfont, xa);
+                if (mx < min_x) min_x = mx; 
+                if (my < min_y) min_y = my;
+                if (Mx > max_x) max_x = Mx;
+                if (My > max_y) max_y = My;
+                pos_x += xa;
+                }
+            }
+        }
+
+
+
+    FLASHMEM void ILI9341Driver::_drawTextILI(const char* text, int & pos_x , int  pos_y, uint16_t col, const void * pfont, bool start_newline_at_0, int lx, int ly, int stride, uint16_t* buffer, float opacity)
+        {
+        if (opacity > 1.0f) opacity = 1.0f;
+        const int startx = start_newline_at_0 ? 0 : pos_x;
+        const size_t l = strlen(text);
+        for (size_t i = 0; i < l; i++)
+            {
+            const char c = text[i];
+            if (c == '\n')
+                {
+                pos_x = startx;
+                pos_y += ((const ILI9341_t3_font_t*)pfont)->line_space;
+                }
+            else
+                {
+                _drawCharILI(c, pos_x, pos_y, col, pfont, lx, ly, stride, buffer, opacity);
+                }
+            }
+        }
+
+
+    FLASHMEM void ILI9341Driver::_drawCharILI(char c, int & pos_x, int & pos_y, uint16_t col, const void * pfont, int lx, int ly, int stride, uint16_t* buffer, float opacity)
+        {
+        const ILI9341_t3_font_t& font = *((const ILI9341_t3_font_t*)pfont);
+        uint8_t n = (uint8_t)c;
+        if ((n >= font.index1_first) && (n <= font.index1_last))
+            {
+            n -= font.index1_first;
+            }
+        else if ((n >= font.index2_first) && (n <= font.index2_last))
+            {
+            n = (n - font.index2_first) + (font.index1_last - font.index1_first + 1);
+            }
+        else
+            { // no char to draw
+            return;
+            }
+        uint8_t * data = (uint8_t *)font.data + _fetchbits_unsigned(font.index, (n*font.bits_index), font.bits_index);
+        int32_t off = 0; 
+        uint32_t encoding = _fetchbits_unsigned(data, off, 3);
+        if (encoding != 0) return; // wrong/unsupported format
+        off += 3;
+        int sx = (int)_fetchbits_unsigned(data, off, font.bits_width);
+        off += font.bits_width;         
+        int sy = (int)_fetchbits_unsigned(data, off, font.bits_height);
+        off += font.bits_height;            
+        const int xoffset = (int)_fetchbits_signed(data, off, font.bits_xoffset);
+        off += font.bits_xoffset;
+        const int yoffset = (int)_fetchbits_signed(data, off, font.bits_yoffset);
+        off += font.bits_yoffset;
+        const int delta = (int)_fetchbits_unsigned(data, off, font.bits_delta);
+        off += font.bits_delta;
+        int x = pos_x + xoffset;
+        int y = pos_y - sy - yoffset;
+        const int rsx = sx; // save the real bitmap width; 
+        int b_left, b_up;
+        if ((_clipit(x, y, sx, sy, b_left, b_up, lx, ly)) && (font.version == 23) && (font.reserved == 2))
+            { // only draw antialised, 4bpp, v2.3 characters
+            data += (off >> 3) + ((off & 7) ? 1 : 0); // bitmap begins at the next byte boundary
+            _drawCharBitmap_4BPP(data, rsx, b_up, b_left, sx, sy, x, y, col, stride, buffer, opacity);
+            }
+        pos_x += delta;
+        return;
+        }
+
+
+    FLASHMEM void ILI9341Driver::_drawCharBitmap_4BPP(const uint8_t* bitmap, int rsx, int b_up, int b_left, int sx, int sy, int x, int y, uint16_t col, int stride, uint16_t * buffer, float opacity)
+        {
+        const int iop = 137 * (int)(256 * opacity);
+        if (sx >= 2)
+            { // each row has at least 2 pixels
+            for (int dy = 0; dy < sy; dy++)
+                {
+                int32_t off = (b_up + dy) * (rsx) + (b_left);
+                uint16_t* p = buffer + (stride) * (y + dy) + (x);
+                int dx = sx;
+                if (off & 1)
+                    {// not at the start of a bitmap byte: we first finish it. 
+                    const uint8_t b = bitmap[off >> 1];
+                    const int v = (b & 15); 
+                    *p = _blend32(*p, col, (v * iop) >> 14);
+                    p++;
+                    off++; dx--;
+                    }
+                while (dx >= 2)
+                    {
+                    const uint8_t b = bitmap[off >> 1];
+                    if (b)
+                        {
+                        { const int v = ((b & 240) >> 4); p[0] = _blend32(p[0], col, (v * iop) >> 14); }
+                        { const int v = (b & 15); p[1] = _blend32(p[1], col, (v * iop) >> 14); }
+                        }
+                    off += 2;
+                    p += 2;
+                    dx -= 2;
+                    }
+                if (dx > 0)
+                    {
+                    const uint8_t b = bitmap[off >> 1];
+                    const int v = ((b & 240) >> 4); *p = _blend32(*p, col, (v * iop) >> 14);
+                    }
+                }
+            }
+        else
+            { // each row has a single pixel 
+            uint16_t* p = buffer + (stride) * (y) + (x);
+            int32_t off = (b_up) * (rsx) + (b_left);
+            while (sy-- > 0)
+                {
+                const uint8_t b = bitmap[off >> 1];
+                const int v = (off & 1) ? (b & 15) : ((b & 240) >> 4);
+                *p = _blend32(*p, col, (v * iop) >> 14);
+                p += stride;
+                off += rsx;
+                }
+            }
+        }
+
+
+    FLASHMEM void ILI9341Driver::_fillRect(int xmin, int xmax, int ymin, int ymax, int lx, int ly, int stride, uint16_t* buffer, uint16_t color, float opacity)
+        {
+        if (xmin < 0) xmin = 0; 
+        if (xmax >= lx) xmax = lx - 1;
+        if (ymin < 0) ymin = 0;
+        if (ymax >= lx) ymax = ly - 1;
+
+        const uint32_t a = (opacity >= 1.0f) ? 32 : (32 * opacity);
+        for (int j = ymin; j <= ymax; j++)
+            {
+            for (int i = xmin; i <= xmax; i++)
+                {
+                auto& d = buffer[i + j * stride];
+                d = _blend32(d, color, a);
+                }
+            }
+        }
+
+
+    FLASHMEM void ILI9341Driver::overlayFPS(uint16_t* fb, int position, uint16_t fg_color, uint16_t bk_color, float opacity)
+        {
+        char text[8] = "--- FPS";
+        int text_off = 0;
+        int fps = statsCurrentFPS();
+        if (fps > 999) fps = 999;
+        if (fps > 0)
+            {
+            text_off = 2;
+            text[text_off] = '0' + (fps % 10);
+            if (fps >= 10)
+                {
+                text_off--;
+                fps /= 10; 
+                text[text_off] = '0' + (fps % 10);
+                }
+            if (fps >= 10)
+                {
+                text_off--;
+                fps /= 10; 
+                text[text_off] = '0' + (fps % 10);
+                }
+            }
+
+        int x = 0;
+        int y = 0;
+        int _fps_xmin, _fps_xmax, _fps_ymin, _fps_ymax;
+        _measureText(text + text_off, x, y, _fps_xmin, _fps_xmax, _fps_ymin, _fps_ymax, &font_ILI9341_T4_OpenSans_Bold_10, false);
+        _fps_xmin -= 2;
+        _fps_xmax += 2;
+        _fps_ymin -= 3;
+        _fps_ymax += 2;
+
+        int dx, dy;
+        switch (position)
+            {
+            case 1: 
+                {
+                dx = _width - 1 - _fps_xmax;
+                dy = _height - 1 - _fps_ymax;
+                break;
+                }
+            case 2:
+                {
+                dx = -_fps_xmin;
+                dy = _height - 1 - _fps_ymax;
+                break;
+                }
+            case 3:
+                {
+                dx = -_fps_xmin;
+                dy = -_fps_ymin;
+                break;
+                }
+            default:
+                {
+                dx = _width - 1 - _fps_xmax;
+                dy = -_fps_ymin;
+                break;
+                }
+            }
+
+        x += dx;
+        _fps_xmin += dx;
+        _fps_xmax += dx;
+        y += dy;
+        _fps_ymin += dy;
+        _fps_ymax += dy;
+
+        _fillRect(_fps_xmin, _fps_xmax, _fps_ymin, _fps_ymax, _width, _height, _width, fb, bk_color, opacity);
+        _drawTextILI(text + text_off, x, y, fg_color, &font_ILI9341_T4_OpenSans_Bold_10, false, _width, _height, _width, fb, opacity + 0.3f);
+        }
+
+
+
+
+
+    /**********************************************************************************************************
     * Statistics
     ***********************************************************************************************************/
 
@@ -1801,6 +2177,11 @@ namespace ILI9341_T4
         _statsvar_margin.reset(); 
         _statsvar_vsyncspacing.reset();
         _nbteared = 0;       
+
+        _stats_current_fps = -1;
+        _statsvar_fps.reset();
+        _fps_ticks = 0; 
+        _fps_counter = 0;
         }
 
 
@@ -1877,7 +2258,8 @@ namespace ILI9341_T4
 
         _print("\n\n[Statistics]\n");
         _printf("- average framerate  : %.1f FPS  (%u frames in %ums)\n", statsFramerate(), statsNbFrames(), statsTotalTime());
-        if (diffUpdateActive()) 
+        _printf("- instant. framerate : %d FPS  [min=%d , max=%d] std=%.1f\n", statsCurrentFPS(), statsFPS().min(), statsFPS().max(), statsFPS().std());
+        if (diffUpdateActive())
             _printf("- upload rate        : %.1f FPS  (%.2fx compared to full redraw)\n", 1000000.0f/_statsvar_uploadtime.avg(), statsDiffSpeedUp());
         else
             _printf("- upload rate        : %.1f FPS\n", 1000000.0f / _statsvar_uploadtime.avg());
@@ -1898,6 +2280,20 @@ namespace ILI9341_T4
 
     void ILI9341Driver::_endframe()
         {
+        _fps_ticks++;
+        const uint32_t tfps = _fps_counter;
+        if (tfps > 1000)
+            {
+            uint32_t new_fps = roundf((1000.0f * _fps_ticks) / tfps);
+            if (_stats_current_fps > 0)
+                {                
+                _statsvar_fps.push(new_fps);
+                }
+            _stats_current_fps = new_fps;
+            _fps_counter = 0;
+            _fps_ticks = 0; 
+            }
+
         _stats_nb_frame++;
 
         _stats_cputime += _stats_elapsed_cputime;
