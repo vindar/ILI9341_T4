@@ -208,6 +208,7 @@ void loop()
         b.draw(fb);
         }
 
+    tft.overlayFPS(fb, 63488, 0, 0.2f); // draw the FPS counter on the top left, in red on a semi-transparent white background
     tft.update(fb); // push the framebuffer to be displayed
 
     if (++nbf % 2000 == 500)

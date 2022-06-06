@@ -193,6 +193,8 @@ void loop()
     compute(curworld, oldworld);        // compute the next geenration
     swap_worlds();                      //swap between old and new worlds
     draw_world(curworld, WHITE, BLACK); // draw onto the framebuffer
+    
+    tft.overlayFPS(fb);                 // draw the FPS counter on the top right corner of the framebuffer
     tft.update(fb);                     // push to screen (asynchronously).
 
     if (++nbf % 1000 == 500)

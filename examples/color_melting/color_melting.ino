@@ -160,6 +160,7 @@ void loop()
     int y = LY / 2 + 50 * sin(a * 0.02);  // move around a bit
     drawDisk(fb, x, y, 60, ((++a & 1) ? RED : BLUE)); // alternate blue and red color at each frame. 
 
+    tft.overlayFPS(fb, 3, 63488, 0,  0.3f); // draw the FPS counter on the top left, in red on a semi-transparent white background
     tft.update(fb); // push the framebuffer to be displayed
 
     adjustMode(); // change the framerate / operation mode / orientation  

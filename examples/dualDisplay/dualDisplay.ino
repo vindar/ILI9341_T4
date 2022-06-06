@@ -305,6 +305,8 @@ void draw(int frame) {
         b.move();
         b.draw(fb);
         }
+        
+    tft0.overlayFPS(fb); // draw the FPS counter on the top right corner of the framebuffer
     tft0.update(fb, false); // update screen 1 on SPI0 async. via DMA. 
 
     // NOTE: here the update on screen 1 is still in progress but we can
@@ -329,6 +331,7 @@ void draw(int frame) {
         }
     }
     
+    tft1.overlayFPS(fb); // draw the FPS counter on the top right corner of the framebuffer
     tft1.update(fb, false); // update screen 2 on SPI1 async. via DMA
 
     // NOTE: here the update on screen 2 is still in progress but we can

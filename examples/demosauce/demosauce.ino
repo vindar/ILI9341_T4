@@ -308,6 +308,7 @@ void loop() {
 
     if (!isTransition) {
         activeAnim->perFrame(tft, frameParams);
+        tft.overlayFPS(fb); // draw the FPS counter on the top right corner of the framebuffer
         tft.update(fb); // update the screen.
         animTimeLeft -= elapsed;
         if (DO_BENCHMARKS) frameCount++;
@@ -394,6 +395,7 @@ void loop() {
 
             // After the transition ends, advance to the next animation
             activeTransition->perFrame(tft, frameParams);
+            tft.overlayFPS(fb); // draw the FPS counter on the top right corner of the framebuffer
             tft.update(fb);
             if (activeTransition->isComplete()) {
                 startAnimation(nextAnim);
