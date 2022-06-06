@@ -1,3 +1,4 @@
+***NEW v1.2: Added an FPS counter (method `overlayFPS()`)***
 
 ***NEW v1.1: Improved performance: update consume less CPU time (around 30% less) for both hardware/software DC pins***
 
@@ -250,7 +251,8 @@ void setup()
     
 void loop()
   {
-  draw_something_onto(fb);             // draw the next frame onto fb
+  draw_something_onto(fb);             // draw the next frame onto fb  
+  tft.overlayFPS(fb);                  // optional: draw the current FPS on the top right corner of the framebuffer
   tft.update(fb);                      // push the framebuffer. That's it !
   }
 ```
@@ -269,7 +271,7 @@ Complete examples can be found in the `/examples` sub-directory of the library.
 tft.update(fb, true); // fb will be uploaded without computing the diff (but just for this upload). 
 ```
 
-- **Printing statistics**. Several methods are available to provide detailed stats about the performance of the driver. All these methods take the form `statsXXX`. Also, there is a very convenient method for debugging/optimization call `printStats(Stream *)` (same for diff buffers) that will print out all the statistics of the driver onto a given stream (the standart `Serial` stream is used by default). 
+- **Printing statistics**. Several methods are available to provide detailed stats about the performance of the driver. All these methods take the form `statsXXX`. Also, there is a very convenient method for debugging/optimization call `printStats(Stream *)` (same for diff buffers) that will print out all the statistics of the driver onto a given stream (the standart `Serial` stream is used by default). One can also use the method `overlayFPS()` to draw the current instantaneous framerate on the framebuffer just before calling `update()`.
 
 - **diff buffer and memory allocation**. The library performs no memory allocation. All the memory needed (framebuffer and diff buffers) are to be provided by the user which keeps complete control over memory allocation. For diff buffers, the `StaticDiffBuffer<>` template class provides a convenient way to create diff buffers with statically allocated memory. However, if more control is needed, one can use the base `DiffBuffer` class which is similar but requires the user to provide the memory space at construction time. See the file `DiffBuff.h` for additional details. 
 
