@@ -28,6 +28,8 @@
 #include <stdint.h>
 #include <Arduino.h>
 
+#define ILI9341_T4_ALWAYS_INLINE __attribute__((always_inline))
+
 namespace ILI9341_T4
 {
 
@@ -69,7 +71,7 @@ namespace ILI9341_T4
         /**
          * Add a new value to the sequence.
          **/
-        void push(int32_t val)  __attribute__((always_inline))            
+        void push(int32_t val)  ILI9341_T4_ALWAYS_INLINE
             {
             _count++;
             _sum += val;

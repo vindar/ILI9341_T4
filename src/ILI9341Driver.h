@@ -75,7 +75,7 @@ namespace ILI9341_T4
 
 #define ILI9341_T4_NB_PIXELS (ILI9341_T4_TFTWIDTH * ILI9341_T4_TFTHEIGHT)   // total number of pixels
 
-#define ILI9341_T4_MAX_VSYNC_SPACING 10             // maximum number of screen refresh between frames (for sync clock stability). 
+#define ILI9341_T4_MAX_VSYNC_SPACING 5              // maximum number of screen refresh between frames (for sync clock stability). 
 #define ILI9341_T4_IRQ_PRIORITY 128                 // priority at which we run the irqs (dma, pit timer and spi interrupts).
 #define ILI9341_T4_MAX_DELAY_MICROSECONDS 1000000   // maximum waiting time (1 second)
 
@@ -151,6 +151,8 @@ namespace ILI9341_T4
 
 
 
+#define ILI9341_T4_ALWAYS_INLINE __attribute__((always_inline))
+
 
 
 
@@ -160,7 +162,7 @@ namespace ILI9341_T4
 * ILI9341 screen driver for Teensy 4/4.1.
 *
 * The driver performs fast blitting of a memory framebuffer onto the screen using SPI transfer (synchronous
-* or asynchronous with DMA) with the following additonal features:
+* or asynchronous with DMA) with the following additional features:
 *
 * (1) Implements partial redraw where only the pixels that changes between frames are updated.
 *
@@ -168,18 +170,26 @@ namespace ILI9341_T4
 *
 * (3) Adjustable screen refresh rate (40 - 120hz) and framerate (asap or locked with the refresh rate).
 *
-* (4) Multiple buffering mode: no buffering / double buffering / triple buffering
+* (4) Multiple buffering mode: no buffering / double buffering 
 *
-* (5) The object can also drive a XPT2048 touchscreen on the same SPI bus.
+* (5) The object can also manage a XPT2046 touchscreen on the same SPI bus.
 *
 *
 * The memory framebuffers should have the usual layout:
 *
-* PIXEL(i,j) = framebuffer[i + (width * j)]
+*                   SCREEN PIXEL(i,j) = framebuffer[i + (width * j)]
 *
 * for 0 <= i < width  and  0 <= j < height
+* 
 * with the 'width' and 'height' value depending on the chosen screen orientation and where the pixels color are
 * given in uint16_t RGB565 format.
+* 
+*RGB565 layout as uint16:     bit 15            bit 0
+*                                  RRRRR GGGGGG BBBBB
+* 
+*    -> red bits   [15-11] 
+*    -> green bits [10-5]
+*    -> blue bits  [4-0]
 *
 ****************************************************************************************************************/
 class ILI9341Driver
@@ -200,22 +210,47 @@ public:
 
 
     /**
-    * Constructor. Set the hardware pins but do not initialize anything.
+    * Constructor. Set the hardware pins but do not initialize anything yet.
+    * 
+    * Pin not set are given default value 255. 
     *
-    * - The reset pin is optional: set it to 255 if not present.
+    * - cs :  Pin connected to the CS pin on the display. Mandatory if present.
+    *         Can be any digital pin on the teensy: it does not need to be an hardware accelerated CCS pin...
+    *         --> Some display do not have a CS pin, in the case, set cs=255. 
+    *        
+    * - dc :  Pin connected to the DC pin on the display. Mandatory.  
+    *         Can be any digital pin on the teensy BUT USING A HARDWARE ACCELERATED CS PIN FOR DC WILL PROVIDE
+    *         A IMPORTANT SPEEDUP !!! 
     * 
-    * - The backlight pin is not managed by the driver. Don't forget to turn in on...
+    * - sclk: Pin connected to the SCK pin on the display. Mandatory.   
+    *         Must be a hardware SCK pin for the SPI bus used on the Teensy. 
+    *         
+    * - mosi: Pin connected to the SDI(MOSI) pin on the display. Mandatory.   
+    *         Must be a hardware MOSI pin for the SPI bus used on the Teensy.
     *
-    * - THE DC PIN SHOULD BE ONE OF THE HARDWARE CHIP SELECT PINS OF THE CORRESPONDING SPI BUS IF
-    *   POSSIBLE (using another pin will work but will be less efficient).
+    * - miso: Pin connected to the SDO(MISO) pin on the display. Mandatory.   
+    *         Must be a hardware MISO pin for the SPI bus used on the Teensy.
+    *
+    * - rst:  Pin connected to the RESET pin on the display. Optional but recommended.   
+    *         -> if not connected to the teensy, set rst=255 and do not forget the pull 
+    *         the RST pin to +33V the display
     * 
-    * - The touch_cs (and touch_irq) pins are optional. They should be set if and only  if the 
-    *   XPT2048 touchscreen is present AND ON THE SAME SPI BUS THAT DRIVES THE DISPLAY.
+    * If the screen has an XPT2046 touchscreen ON THE SAME SPI BUS:
     * 
+    * - touch_cs : Pin connected to the T_CS pin on the display. Mandatory to use the touchscreen.
+    *              Can be any digital pin.
+    * 
+    * - touch_irq: Pin connected to the T_IRQ pin on the display. Optional. 
+    *              Can be any digital pin.
+    *              
+    *  --> When using the touchscreen, the T_CLK, T_DIN and T_DO pin fron the screen must be connected
+    *      to the same pin as SCK, SDI and SDO  (i.e. the screen and touchscreen share the same SPI bus)
+    *      
     * --------------------------------------------------------------------------------------------
-    * THE SPI BUS SHOULD BE DEDICATED TO THE SCREEN (EXCEPT FOR THE POSSIBLE XPT2048 TOUCHSCREEN)
-    * BECAUSE ASYNC UPDATE MAY REQUIRE ACCESS TO THE SPI BUS AT ANY TIME AND CANNOT WAIT...
+    * THE SPI BUS SHOULD BE DEDICATED TO THE SCREEN (AND POSSIBLY THE XPT2046 TOUCHSCREEN)
+    * DO NOT CONNECT ANY OTHER DEVICE ONT THAT SPI BUS !!!
     * --------------------------------------------------------------------------------------------
+    * 
     **/
     ILI9341Driver(uint8_t cs, uint8_t dc, uint8_t sclk, uint8_t mosi, uint8_t miso, uint8_t rst = 255, uint8_t touch_cs = 255, uint8_t touch_irq = 255);
 
@@ -225,38 +260,37 @@ public:
     /**
     * Set the output Stream used by the driver for displaying infos. 
     *
-    * Set this to nullptr to prevent sending any information. 
+    * Set this to nullptr to prevent any output.debugging.
     * 
     * The stream is used, in particular by the following methods:
     * 
-    * - `begin()` for debugging/displaying debug info    
-    * - `printStatus()` to check the the driver status  
-    * - `printRefreshMode()` to display available refresh rates/modes
-    * - `printStats()` to print statistics about frame uploads
-    * - `calibrateTouch()` to provide instruction for calibration  
+    * - `begin()` for debugging/displaying debug information.
+    * - `printStatus()` to check the the driver status.    
+    * - `printRefreshMode()` to display available refresh rates/modes.
+    * - `printStats()` to print statistics about frame uploads.
+    * - `calibrateTouch()` to provide instruction for calibration.
     * 
+    * Typical usage: output(&Serial)
     **/
-    void output(Stream * outputStream = nullptr)
-        {
-        _outputStream = outputStream;
-        }
+    void output(Stream * outputStream = nullptr) { _outputStream = outputStream; }
 
 
     /**
-    * Initialize the screen (and optionally set the speed for read/write spi transfers).
+    * Initialize the screen (and optionally set the speed for read/write SPI transfers).
     *
-    * Call this method only once. There is no associated end() method.
+    * THis method should be called only once. There is no associated end() method.
     * 
-    * Return true if init OK, false if an error occured.
+    * Return true if initialization is OK, false if an error occurred.
     * 
     * NOTE: if an output stream is set with the `output()` method, then debug information
-    * are send to this stream.
+    *       are sent to this stream.
     **/
     bool begin(uint32_t spi_clock = ILI9341_T4_DEFAULT_SPICLOCK, uint32_t spi_clock_read = ILI9341_T4_DEFAULT_SPICLOCK_READ);
 
 
     /**
     * Query the value of the self-diagnostic register.
+    * 
     * Should return ILI9341_T4_SELFDIAG_OK = 0xC0 if everything is fine.
     **/
     int selfDiagStatus();
@@ -275,21 +309,15 @@ public:
     /**
     * Set the speed for subsequent SPI writes.
     *
-    * Remark: calling this method reset the statistics.
+    * Remark: calling this method reset all statistics.
     **/
-    inline void setSpiClock(int spi_clock = ILI9341_T4_DEFAULT_SPICLOCK) 
-        { 
-        waitUpdateAsyncComplete();
-        _spi_clock = spi_clock; 
-        statsReset();
-        resync();
-        };
+    void setSpiClock(int spi_clock = ILI9341_T4_DEFAULT_SPICLOCK);
 
 
     /**
     * Query the spi speed for SPI writes.
     **/
-    inline int  getSpiClock() const { return _spi_clock; }
+    int  getSpiClock() const { return _spi_clock; }
 
 
     /**
@@ -297,20 +325,14 @@ public:
     *
     * Remark: calling this method reset the statistics.
     **/
-    inline void setSpiClockRead(int spi_clock = ILI9341_T4_DEFAULT_SPICLOCK_READ) 
-        { 
-        waitUpdateAsyncComplete();
-        _spi_clock_read = spi_clock; 
-        statsReset();
-        resync();
-        }
+    void setSpiClockRead(int spi_clock = ILI9341_T4_DEFAULT_SPICLOCK_READ);
     
 
 
     /**
     * Query the spi speed for SPI reads.
     **/
-    inline int  getSpiClockRead() const { return _spi_clock_read; }
+    int  getSpiClockRead() const { return _spi_clock_read; }
 
 
 
@@ -356,11 +378,9 @@ public:
     *
     * Screen Orientation 
     *
-    * -> these methods determine the screen orientation which affects the framebuffer dimensions and it 
+    * -> these methods determine the screen orientation which affects the framebuffer dimensions and its 
     *    layout.
-    *    Whenever possible, portrait orientation 0 should be used as it is the one for which creating
-    *    diff is fastest. Using another orientation will result in a small penalty when creating the 
-    *    diff buffer (which should not be a problem in most case anyway). 
+    *    
     ****************************************************************************************************
     ****************************************************************************************************/
 
@@ -380,17 +400,16 @@ public:
     * Set the screen Orientation (between 0 and 3)
     *
     * The default start up orientation is 0.
+    * 
     * The framebuffer layout depend on whether the display is in portrait or landscape mode.
     * 
     * - orientation 0 and 2 in portrait mode : 240x320.
     * - orientation 1 and 3 in landscape mode : 320x240.
     *
     * NOTE: Orientation 0 the the only one for with pixels refresh order coincide with the framebuffer
-    * ordering so it it is the orientation that will allow the fastest diff redraw with fewest screen 
-    * tearing -> Use this orientation whenever possible. The second best choice is orientation 2. the
-    * landscape modes 1 and 3 will perform (equally) less efficiently. 
+    * ordering. Using this orientation may provide a marginal increase in the driver speed.
     * 
-    * Remark: calling this method reset the statistics (provided the orientation changes). 
+    * Remark: calling this method resets the statistics (if the orientation changes). 
     **/
     void setRotation(uint8_t r);
 
@@ -399,21 +418,27 @@ public:
     * Return the current screen orientation (between 0 and 3)
     *
     * The default start up orientation is 0.
-    * The framebuffer layout depend on whether the display is in portrait or landscape mode.
+    * 
+    * The framebuffer layout depends on whether the display is in portrait or landscape mode:
+    * 
+    *  SCREEN_PIXEL(i,j) = framebuffer[i + width*j]
+    *  
+    * with width =  240 if orientation is 0 or 2
+    *            =  320 if orientation is 1 or 3.
     **/
-    inline int getRotation() const { return _rotation; }
+    int getRotation() const { return _rotation; }
 
 
     /**
     * Return the screen witdh (w.r.t the current orientation).
     **/
-    inline int width() const { return _width; }
+    int width() const { return _width; }
 
 
     /**
     * Return the screen height (w.r.t the current orientation).
     **/
-    inline int height() const { return _height; }
+    int height() const { return _height; }
 
 
 
@@ -424,9 +449,9 @@ public:
     *
     * Screen refresh rate. 
     * 
-    * -> these methods are used to set the screen refresh rate (number of time the screen is refresh 
+    * -> these methods are used to set the screen refresh rate (number of time the display is refreshed 
     *    per second). This rate is important because it is related to the actual framerate via the 
-    *    vsync_spacing parameter (c.f. the vsync setting sdection). 
+    *    vsync_spacing parameter (c.f. the vsync setting section). 
     *
     ****************************************************************************************************
     ****************************************************************************************************/
@@ -438,52 +463,48 @@ public:
     * - 0  : fastest refresh rate (around than 120/140hz). 
     * - 31 : slowest refresh rate (around 30/40hz).
     * 
-    * NOTE: the refresh rate for a given mode varies from display to display. 
-    * Once the mode set, use getRefreshRate() to find out the refresh rate.
+    * NOTE: the exact refresh rate for a given mode varies from display to display. 
+    *       Once the mode set, use getRefreshRate() to find out the refresh rate.
     *
     * By default the refresh mode selected is 0 (fastest possible). 
     * 
-    * Remark: calling this method reset the statistics.
+    * Remark: calling this method resets the statistics.
     **/
-    void setRefreshMode(int mode);
+    void  setRefreshMode(int mode);
 
 
     /**
     * Return the current refresh mode. 
     *
-    * - 0  : fastest refresh rate (around than 120/140hz). 
-    * - 31 : slowest refresh rate (around 30/40hz). 
+    * - 0  : fastest refresh rate (around than 120/140Hz). 
+    * - 31 : slowest refresh rate (around 30/40Hz).   
+    *
     **/
     int getRefreshMode() const { return _refreshmode; }
 
 
     /**
-    * Set the refresh mode for the display to match the requested refresh rate (in hz). 
+    * Set the refresh mode for the display to match the requested refresh rate (in Hz). 
     * as close as possible. 
     * 
     * After this method returns. Use getRefreshMode() and getRefreshRate() to find
     * out the actual mode and exact refresh rate set. Note that these values will varies
     * from display to display. 
     *
-    * Remark: calling this method reset the statistics.
+    * Remark: calling this method resets the statistics.
     **/
-    void setRefreshRate(float refreshrate_hz)
-        {
-        const int m = _modeForRefreshRate(refreshrate_hz);
-        setRefreshMode(m);
-        resync();
-        }
+    void setRefreshRate(float refreshrate_hz);
 
 
     /**
-    * Get the refresh rate in Hz of the display corresponding to the current
+    * Get the refresh rate of the display (in Hz) corresponding to the current
     * refresh mode set.
     **/
     float getRefreshRate() const { return (_period == 0) ? 0.0f : 1000000.0f / _period; }
 
 
     /**
-    * Display all the screen refresh mode with corresponding refresh rates. 
+    * Display all the possible screen refresh mode with the corresponding refresh rates. 
     * 
     * The infos are sent to the output stream set with the `output()` method.
     * 
@@ -494,13 +515,15 @@ public:
 
 
 
+
+
     /***************************************************************************************************
     ****************************************************************************************************
     *
-    * Vsync settings and framerate locking. 
+    * VSync settings and framerate locking. 
     *
-    * -> these methods decide how updates are carried out and wheter operations are synced with the 
-    *    display refresh rate or pushed as fast as possible. 
+    * -> these methods decide how updates are carried out and whether operations are synced with the 
+    *    display refresh rate or, on the contrary, are pushed as fast as possible. 
     *
     ****************************************************************************************************
     ****************************************************************************************************/
@@ -508,58 +531,52 @@ public:
 
 
     /**
-    * This parameter defines the upload stategy and determines how the actual framerate relates 
+    * This parameter defines the upload strategy and determines how the actual framerate relates 
     * to the display refresh rate. 
     *
-    * This number must be between -1 and 10 = ILI9341_T4_MAX_VSYNC_SPACING.
+    * This number must be between -1 and 5 = ILI9341_T4_MAX_VSYNC_SPACING.
     *
     * - vsync_spacing = -1. In this case, screen updates occur as soon as possible and some frames 
-    *                       may even be dropped when using multi-buffering  if they are pushed to 
+    *                       may even be dropped when using double buffering if they are pushed to 
     *                       update() faster than they can be uploaded to the screen. This mode will 
-    *                       provide the fastest 'apparent' framerate but at the expanse of screen 
-    *                       tearing (no vsync) and it also does not insure any framerate control/
-    *                       stability. 
+    *                       provide the fastest 'apparent' framerate but at the expanse of picture 
+    *                       quality and will also induce screen tearing (no VSync)
+    *                       This mode also does not insure any framerate control/stability. 
     *
     * - vsync_spacing = 0. Again, screen updates are pushed to the screen as fast as possible but 
-    *                      frames are not dropped so if all the internal framebuffers are filled
-    *                      the  update() method will wait until it can buffer/push the next frame 
-    *                      on the screen. Again, this mode provides no guaranty concerning screen 
-    *                      tearing nor framerate stability. 
+    *                      frames are not dropped so the driver will wait if an update is already 
+    *                      in progress. 
+    *                      Again, this mode provides no guaranty concerning screen tearing nor 
+    *                      framerate stability. 
     *
     * - vsync_spacing > 0. The updates are synchronized with the screen refresh. This approach has 
     *                      two advantages:
     *                      1) It prevents screen tearing.
     *                      2) It insure a constant framerate.
     *
-    *                      vsync_spacing is the number of screen refresh between two consecutives 
+    *                      vsync_spacing is the number of screen refresh between two consecutive 
     *                      updates. Thus, the real framerate is given by:
     *
     *                      real_framerate = screen_refresh_rate / vsync_spacing
     *
-    *                      vsync_spacing should be set to either 1 (framerate = refresh_rate) 
-    *                      or 2 (framerate = half refresh rate). Larger values are not really 
-    *                      useful except for special cases. 
+    *                      vsync_spacing should be set to either:                           
+    *                      1 (framerate = refresh_rate)  or 2 (framerate = half refresh rate).   
+    *                       
+    *                      --> Larger values are not really useful except for special cases. 
     *
     * NOTE 1: In order to insure that screen tearing cannot occur, the upload must be done fast 
-    *         enough so that the refresh scanline does not catch up with the pixels being drawn. 
-    *         This is true when the update takes slightly less than  2 refresh periods.
-    *         For this reason, vsync_spacing = 2  should be the optimal choice in most case. 
-    *         However, if the diff is simple enough so that the frame upload rate is faster than 
-    *         the refresh rate and if also the frames can be generated fast enough,  then it may 
-    *         be viable to set vsync_spacing = 1 ...
+    *         enough so that the refresh 'scanline' does not catch up with the pixels currently
+    *         being updated. This is possible if the upload takes less than 2 refresh periods.
+    *         For this reason, vsync_spacing = 2  is the optimal choice in most case. However, 
+    *         if the diff is simple enough so that the frame upload rate is faster than the 
+    *         screen refresh rate, then it may be worth setting vsync_spacing = 1 ...
     *
-    * ADVICE : FOR MOST CASE: USE vsync_spacing = 2 AND ADJUST THE DISPLAY REFRESH RATE WITH 
-    *          setRefreshRate() TO GET A CONSISTENT FRAMERATE. 
+    * ADVICE : USE vsync_spacing = 2 AND ADJUST THE DISPLAY REFRESH RATE WITH setRefreshRate() 
+    *          TO GET A CONSISTENT FRAMERATE WITHOUT SCREEN TEARING
     * 
-    * Remark: calling this method reset the statistics.
+    * Remark: calling this method resets the statistics.
     **/
-    void setVSyncSpacing(int vsync_spacing = ILI9341_T4_DEFAULT_VSYNC_SPACING)
-        {
-        waitUpdateAsyncComplete();
-        _vsync_spacing = ILI9341Driver::_clip<int>((int)vsync_spacing, (int)-1, (int)ILI9341_T4_MAX_VSYNC_SPACING);
-        statsReset();
-        resync();
-        }
+    void setVSyncSpacing(int vsync_spacing = ILI9341_T4_DEFAULT_VSYNC_SPACING);
 
 
     /**
@@ -570,7 +587,7 @@ public:
 
 
     /**
-    * Set how late we can be behind the initial sync line and still start uploading a frame without
+    * Set how late we can be behind the scan line and still start uploading a frame without
     * waiting for the next refresh for synchronization. Set a value in [0.1f, 0.9f]
     *
     * - Choosing a small value will reduce screen tearing but may make the framerate oscillate more
@@ -579,32 +596,24 @@ public:
     * - Choosing a large value will stabilize the framerate but at the expense of more screen tearing
     *   when the timing is tight.
     *
-    * Remark: calling this method reset the statistics.
+    * Remark: calling this method resets the statistics.
     **/
-    void setLateStartRatio(float ratio = ILI9341_T4_DEFAULT_LATE_START_RATIO)
-        {
-        waitUpdateAsyncComplete(); // no need to wait for sync. 
-        _late_start_ratio = ILI9341Driver::_clip<float>(ratio, 0.1f, 0.9f);
-        statsReset();
-        resync();
-        }
-
-
-
-    /**
-    * Force a re-synchronization with the screen scanline on the next frame upload. 
-    * This command has no effect when not in vsync mode (ie when vsync_spacing <= 0).
-    **/
-    void resync()
-        {
-        _late_start_ratio_override = true;
-        }
+    void setLateStartRatio(float ratio = ILI9341_T4_DEFAULT_LATE_START_RATIO);
 
 
     /**
     * Return the value of the "late start ratio" parameter.
     **/
     float getLateStartRatio() const { return _late_start_ratio; }
+
+
+    /**
+    * Force a re-synchronization with the screen scanline on the next frame upload. 
+    * This command has no effect when not in vsync mode (ie when vsync_spacing <= 0).
+    * 
+    * This method should not be used under normal circumstance.
+    **/
+    void resync() { _late_start_ratio_override = true; }
 
 
 
@@ -614,32 +623,41 @@ public:
     *
     * Buffering mode 
     * 
-    * -> these methods decide whether update operations are carried immediately or if the framebuffer is 
-    *    first copied internally for upload to be performed asynchronously (via DMA). 
+    * -> these methods decide whether update operations are carried immediately or if an internal
+    *    framebuffer is used for double buffering and asynchronous upload via DMA.
     * 
     ****************************************************************************************************
     ****************************************************************************************************/
 
 
     /**
-    * Set/remove one (or two) internal framebuffers.
+    * Set/remove the internal framebuffer.
     * 
-    * The mode of operation of the update() method depend on the number of internal diff buffer /framebuffers set:
+    * The mode of operation of the update() method depends on whether an internal framebuffer is set.
     *
-    * - 0 framebuffer: all updates operations are carried immediately (mode: NO_BUFFERING)
-    * - 1 framebuffers: double buffering using asynchronous transfer via DMA (mode: DOUBLE_BUFFERING_ONE_DIFF)
-    * - 2 framebuffers: triple buffering using asynchronous transfer via DMA  (mode: TRIPLE_BUFFERING)
+    * - no internal framebuffer  : all updates operations are performed immediately.
+    * - internal framebuffer set : double buffering and asynchronous transfer in background via DMA.
     * 
     * ----------------------------------------------------------------------------------------------
-    * THESE FRAMEBUFFERS ARE GIVEN FOR INTERNAL USE BY THE CLASS AND MUST NOT BE MODIFIED ONCE SET. 
-    * YOU MUST USE ANOTHER FRAMEBUFFER FOR DRAWING AND THEN PASSING IT TO THE update() METHOD !
-    * IF YOU NEED TO GET THE FRAMEBUFFERS BACK, CALL THE METHOD AGAIN BUT WITH EMPTY PARAMETERS TO 
-    * DETACH THEM FROM THIS OBJECT. 
+    * THE INTERNAL FRAMEBUFFER IS GIVEN FOR INTERNAL USE BY THE CLASS AND SHOULD NOT BE MODIFIED ONCE 
+    * SET (except if you know what you are doing :-))
     * ----------------------------------------------------------------------------------------------
     * 
-    * Remark: calling this method reset the statistics.
+    * Remarks: 
+    * 
+    * 1. Calling the method with empty parameter/nullptr removes any previously set framebuffer.  
+    *  
+    * 2. Calling this method resets the statistics.
     **/
-    void setFramebuffers(uint16_t* fb1 = nullptr, uint16_t * fb2 = nullptr);
+    void setFramebuffer(uint16_t* fb1 = nullptr);
+
+
+    /**
+    * Alias for the SetFrameBuffer() method.
+    * 
+    * For compatibility with previous library version only: the second framebuffer fb2 is ignored. 
+    **/
+    void setFramebuffers(uint16_t* fb1 = nullptr, uint16_t* fb2 = nullptr) { setFramebuffer(fb1 ? fb1 : fb2); }
 
 
 
@@ -648,28 +666,17 @@ public:
         {
         NO_BUFFERING = 0,
         DOUBLE_BUFFERING = 2,
-        TRIPLE_BUFFERING = 3
         };
-
 
 
     /**
     * Return the current buffering mode:
     *
-    * - 0 = NO_BUFFERING     : all updates operations are carried immediately.
-    * - 2 = DOUBLE_BUFFERING : double buffering using asynchronous transfer via DMA.
-    * - 3 = TRIPLE_BUFFERING : triple buffering using asynchronous transfer via DMA.
+    * - 0 = NO_BUFFERING     : no internal framebuffer. All updates operations are carried immediately.
+    * - 2 = DOUBLE_BUFFERING : internal framebuffer set. Double buffering using asynchronous transfer via DMA.
     * 
-    * NOTE : Triple buffering should use either  0 or 2 diff buffers. If  only 1 diff 
-    *        buffer is set in triple buffering mode, then it is simply ignored and 
-    *        differential update are disabled.
     **/
-    int bufferingMode() const
-        {
-        if (_fb2) return TRIPLE_BUFFERING;
-        if (_fb1) return DOUBLE_BUFFERING;
-        return NO_BUFFERING; 
-        }
+    int bufferingMode() const { return ((_fb1) ? DOUBLE_BUFFERING : NO_BUFFERING);}
 
 
 
@@ -686,22 +693,21 @@ public:
 
 
     /**
-    * Set/remove one (or two) internal diff buffers which enables/disables differential updates. 
+    * Set/remove one (or two) internal diff buffers used for performing differential updates. 
     *
-    * When diff buffers are set. They will be used whenever possible to create diff between the current 
-    * screen content and the new framebuffer to be uploaded and only pixels that changes will be uploaded
-    * which can drastically reduce the upload time and therefore provide a boost on the effective framerate. 
+    * When diff buffers are set. They will be used whenever possible to create 'diff' between the current 
+    * screen content and the new framebuffer to be uploaded so that only pixels that change color will be 
+    * uploaded, drastically reducing the upload time and therefore providing a boost on the effective 
+    * framerate. 
     * 
-    * In order to use differential update, the driver must 'know' the current screen content which means that 
-    * buffering (either double or triple) must be active. Thus, to enable differential update, you must both 
-    * set at  least 1 diff buffer and 1 internal framebuffer. 
+    * In order to use differential update, the driver must 'know' the current screen content which means 
+    * that an internal frmaebuffer must be set (ie double buffering enabled). To enable differential updates
+    * you must both set at least 1 diff buffer AND the internal framebuffer. 
     * 
-    * Setting a second diff buffer is optionnal in double buffering mode but can increase the framerate as it 
-    * allows to compute the diff of the next frame while still doing the async transfer of the previous one. 
+    * Setting a second diff buffer is optional but will increase the framerate as it allows the driver to 
+    * compute the diff of the next frame while still performing the asynchronous transfer of the previous 
+    * frame. 
     * 
-    * IN TRIPLE BUFFERING MODE, 2 DIFF BUFFER ARE MANDATORY TO ENABLE DIFFERNETIAL UPDATES. IF ONLY ONE 
-    * DIFF BUFFER IS SET, IT WILL BE IGNORED.
-    *
     * ----------------------------------------------------------------------------------------------
     * ONCE SET, THE DIFFBUFFER BELONG TO THIS OBJECT AND MUST NOT BE TOUCHED FOR CREATING OR READING
     * DIFFS OR THE WHOLE PROGRAM MAY CRASH !!!
@@ -709,36 +715,30 @@ public:
     * HOWEVER, IT IS STILL POSSIBLE TO CALL ALL THE STATSXXX() METHODS OF THE DIFFS TO CHECK MEMORY
     * CONSUMPTION / CPU USAGE...
     *
-    * IF YOU WANT THE DIFF BUFFER BACK, JUST CALL THE METHOD AGAIN WITH EMPTY PARAMETERS.
+    * IF YOU WANT THE DIFF BUFFER BACK, JUST CALL THE METHOD AGAIN WITH EMPTY PARAMETERS TO REMOVE THEM
+    * FROM THE DRIVER
     * ----------------------------------------------------------------------------------------------
     *
-    * Remark: calling this method reset the stats if the buffering mode changes
+    * Remark: 
+    * 
+    * - Calling this method resets the stats (if the buffering mode changes).  
+    * - Use 2 diff buffers whenever possible !
     **/
     void setDiffBuffers(DiffBuffBase* diff1 = nullptr, DiffBuffBase* diff2 = nullptr);
 
 
 
     /**
-    * Query whether we perform full update or differential updates. 
+    * Query whether the driver performs full screen transfer or differential updates. 
     * 
-    * Differential updates are enabled as soon as the two conditions are meet:
+    * Differential updates are enabled as soon as the following two conditions are meet:
     * 
-    * - 1 internal framebuffer as been set (ie DOUBLE_BUFFERING is ON ) and 1 or 2
-    *   diff buffer is set. [Note that using 2 diff buffers instead of 1 usually 
-    *   provide an improved framerate so it should be the prefered solution especially 
-    *   since a diff buffer only cost a few kb of memory].
+    * 1. An internal framebuffer has been set (ie DOUBLE_BUFFERING is active)          
+    * 2. At least one diff buffer has been set. 
     * 
-    * - 2 internal framebuffers (TRIPLE_BUFFERING) AND 2 diff buffers have been set. 
-    *   One diff buffer is not enough in triple buffering mode hence it will simply
-    *   be ignored if there is only one.
-    * 
-    * Of course, in direct mode (NO_BUFFERING), 
+    * NOTE: Use 2 diff buffers whenever possible !
     **/
-    bool diffUpdateActive() const
-        {
-        const int bm = bufferingMode();
-        return (((bm == DOUBLE_BUFFERING) && (_diff1 != nullptr)) || ((bm == TRIPLE_BUFFERING) && (_diff2 != nullptr)));
-        }
+    bool diffUpdateActive() const { return ((bufferingMode() == DOUBLE_BUFFERING) && (_diff1 != nullptr)); }
 
 
 
@@ -747,24 +747,28 @@ public:
     * 
     * [See the DiffBuff class for more detail on the gap parameter].
 
-    * This parameter correspond to the number of consecutive identical pixels needed to break a SPI transaction. 
-    * A smaller value will give more accurate but larger diffs. The optimal value should be between 4 and 20.
+    * This parameter correspond to the number of consecutive unchanged pixels needed to break a SPI 
+    * transaction. A smaller value will give results in less pixels being uploaded but will, on the 
+    * other hand create larger diffs... The optimal value should be between 4 and 20 and will depend 
+    * on the kind of graphics drawn. 
     * 
-    * Try gap = 4 if you can afford diff buffers with large memory (up to 15K of memory). 
-    *
-    * Remark: calling this method reset the statistics.
+    * As a rule of thumb:
+    * 
+    * - Gap larger than 10 for diff buffer with less than 4K of memory
+    * - Gap between 6 to 10  for diff buffers with size between 4K to 8K.  
+    * - Gap between 4 to 6 for diff buffers with size larger then 8K. 
+    * 
+    * You can use the printStats() to check how much memory the diff buffer typically consume. If the
+    * diffs buffers overflow too often, you should either increase the gap or increase their size.
+    * 
+    * Remark: calling this method resets the statistics.
     **/
-    void setDiffGap(int gap = ILI9341_T4_DEFAULT_DIFF_GAP)
-        {
-        waitUpdateAsyncComplete();
-        _diff_gap = ILI9341Driver::_clip<int>((int)gap,(int)1,(int)ILI9341_T4_NB_PIXELS);
-        statsReset();
-        resync();
-        }
+    void setDiffGap(int gap = ILI9341_T4_DEFAULT_DIFF_GAP);
+
 
 
     /**
-    * Return the current gap used for creating diffs. 
+    * Return the current gap parameter used when creating diffs. 
     **/
     int getDiffGap() const { return _diff_gap; }
 
@@ -772,45 +776,43 @@ public:
     /**
     * Set the mask used when creating a diff to check is a pixel is the same in both framebuffers. 
     * If the mask set is non-zero, then only the bits set in the mask are used for the comparison 
-    * so pixels with differents values may be considered equal and may not redrawn.
+    * so pixels with different values may be considered equal and may not redrawn.
     * 
     * Setting a mask may be useful when the framebuffer being uploaded to the screen comes from
     * a camera or another source that introduces random noise that would prevent the diff from
-    * finding large gap hence making it pretty useless but it does not really matter to have a 
-    * 'perfect' copy of the framebuffer onto the screen. 
+    * finding large region of identical pixels (hence making the diff pretty useless) but when 
+    * it does not really matter to have a 'perfect' copy of the framebuffer on the screen. 
     * 
-    * Typically, you want to set the lower bits on each channel color to 0 so that color that
+    * Typically, one wants to set the lower bits on each channel color to 0 so that color that
     * are 'close' are not always redrawn (see the other method version below). 
     * 
     * If called without argument, the compare mask is set to 0 hence disabled and strict equality
-    * is enforced when creating diffs (default behaviour).
+    * is enforced when creating diffs (default behavior).
+    * 
+    * -> RGB565 layout as uint16: bit 15            bit 0
+    *                                  RRRRR GGGGGG BBBBB
     **/
-    void setDiffCompareMask(uint16_t mask = 0)
-        {
-        if (mask == 65535) mask = 0;
-        _compare_mask = mask;
-        }
+    void setDiffCompareMask(uint16_t mask = 0);
 
 
     /**
     * Set the compare mask by specifying for each color channel the number of lower bits
     * that should be ignored. 
     * 
-    * Recall that there are 5 bits for the blue and  red channel and 6 bits for the green one. 
+    * Recall that there are 5 bits for the blue and red channel and 6 bits for the green
+    * channel. 
+    * 
+    * -> RGB565 layout as uint16: bit 15            bit 0
+    *                                  RRRRR GGGGGG BBBBB
     **/
-    void setDiffCompareMask(int bitskip_red, int bitskip_green, int bitskip_blue)
-        {
-        _compare_mask = (((uint16_t)(((0xFF >> bitskip_red) << bitskip_red) & 31)) << 11)
-                      | (((uint16_t)(((0xFF >> bitskip_green) << bitskip_green) & 63)) << 5)
-                      | ((uint16_t)(((0xFF >> bitskip_blue) << bitskip_blue) & 31));
-        if (_compare_mask == 65535) _compare_mask = 0; 
-        }
+    void setDiffCompareMask(int bitskip_red, int bitskip_green, int bitskip_blue);
 
 
     /**
     * Return the value of the current compare_mask. 
+    * 
     * Return 0 if the mask is not set and strict comparison of pixel colors is enforced 
-    * (default behaviour).
+    * (which is the default value).
     **/
     uint16_t getCompareMask() const { return _compare_mask; }
 
@@ -838,141 +840,122 @@ public:
     /**
     *                                 MAIN SCREEN UPDATE METHOD
     *
-    * Push a framebuffer to be displayed on the screen. The behaviour of the method depend on the
+    * Push a framebuffer to be displayed on the screen. The behavior of the method depend on the
     * current buffering mode and the vsync_spacing parameter.
     *
-    * If force_full_redraw = true, then differential update is disable for this particular frame
-    * and the whole screen updated (even if a diff could have been used). Normally, this option
-    * should not be needed except in the very special cases where one knows for sure that the diff
-    * will be useless so disabling it saves some CPU times that would have been needed for creating
-    * the diff (around 1us normally). If you know that diff will always be useless. Just disable 
-    * differential updates by removing the diff buffers by calling setDiffBuffers()...
+    * - fb : the framebuffer to draw unto the screen.     
+    *  
+    * - force_full_redraw: If set to true, then differential update is disabled for this particular   
+    *                      frame and the whole screen is updated (even when a diff could have been used). 
+    *                      Normally, this option should not be needed except in the very special cases 
+    *                      where one knows for sure that the diff will be useless so disabling it saves 
+    *                      some CPU times that would have been used for creating the diff (around 1us 
+    *                      normally).
     *
     * WHEN THE METHOD RETURNS, THE FRAME MAY OR MAY NOT ALREADY BE DISPLAYED ONT THE SCREEN BUT
-    * THE INPUT FRAMEBUFFER fb CAN STILL BE REUSED IMMEDIATELY IN ANY CASE (A COPY IS MADE WHEN
-    * USING ASYNC UPDATES).
+    * THE INPUT FRAMEBUFFER fb CAN STILL BE REUSED IMMEDIATELY IN ANY CASE. (when using async updates,
+    * the internal framebuffer is used to save a copy of the framebuffer).
     *
-    * Depending on bufferingMode():
+    * 
+    * The exact behavior of the method depends on bufferingMode():
     *
-    * NO_BUFFERING:
+    * 
+    * -> NO_BUFFERING (i.e. no internal framebuffer set):
     *
-    *   The framebuffer is displayed immediately, the method returns only when upload is complete.
+    *   The framebuffer is pushed to the screen immediately and the method returns only when upload is 
+    *   complete. In this mode, differential upload are always disabled: the whole screen is updated
+    *   and diff buffers, if present, are ignored. 
     *
-    *   - if vsync_spacing <= 0. upload to the screen start immedialely (no vsync).
+    *   - if vsync_spacing <= 0, upload to the screen start immediately (no VSync).
     *
-    *   - if vsync_spacing >= 1. screen upload is synchronized with the screen refresh and the
-    *     method waits until vsync_spacing refreshes have occured since the previous update to insure
-    *     a constant framerate equal to  (refresh_rate/vsync_spacing).
+    *   - if vsync_spacing >= 1, screen upload is synchronized with the screen refresh (VSync) and the
+    *     method waits until vsync_spacing refreshes have occurred since the previous update to insure
+    *     a constant framerate equal to (refresh_rate/vsync_spacing).
+    * 
     *
-    *     NOTE: If buffering is disabled, there are not internal copy of the current screen content
-    *           and therefore differential updates are also disabled (even if a diff buffer is present).
+    * -> DOUBLE_BUFFERING (internal framebuffer set)
     *
+    *   All updates are done asynchronously via DMA and the method returns asap. If 1 or 2 diff buffers
+    *   are present, they are automatically used to perform differential update: only the portion of
+    *   the screen whose content has changed is redrawn. 
     *
-    * DOUBLE_BUFFERING_ONE_DIFF / DOUBLE_BUFFERING_TWO_DIFF
+    *   - if vsync_spacing = -1, upload to the screen starts immediately unless there is already a
+    *     transfer in progress in which case the frame is simply dropped and the method return without
+    *     doing anything (no VSync).
     *
-    *   All updates are done async. via DMA and the method returns asap.
-    *
-    *   - if vsync_spacing = -1. upload to the screen start immedialely unless there is already a
-    *     transfer in progress in which case the frame is simply dropped.
-    *
-    *   - if vsync_spacing = 0. upload to the screen start immedialely unless there is already a
-    *     transfer in progress in which case it waits until the transfer completes and then start
-    *     immediatly another async transfer via DMA (no vsync).
+    *   - if vsync_spacing = 0, upload to the screen start immediately unless there is already a
+    *     transfer in progress in which case the method waits until the transfer completes and then 
+    *     starts another async transfer immediately (no VSync).
     *
     *   - if vsync_spacing > 0. screen upload is synchronized with the screen refresh and the
-    *     method waits until vsync_spacing refreshes have occured since the previous update to
-    *     insure a constant framerate equal to  (refresh_rate/vsync_spacing). If a transfer is
+    *     method waits until vsync_spacing refreshes have occurred since the previous update to
+    *     insure a constant framerate equal to (refresh_rate/vsync_spacing). If a transfer is
     *     already in progress, it waits for it to complete before scheduling the next transfer
     *     via DMA and returning.
+    * 
     *
+    * NOTE: 
+    *       (1) double buffering give a HUGE improvement over the no buffering method at the
+    *           expense of an additional internal memory framebuffer (150Kb).
     *
-    *     NOTE: If buffering is disabled, there are not internal copy of the current screen content
-    *           and therefore differential updates are also disabled (even if a diff buffer is present).
-    *
-    *
-    * TRIPLE_BUFFERING
-    *
-    *   All updates are done async. via DMA and the method returns asap.
-    *
-    *   - if vsync_spacing = -1. Upload to the screen start immedialely unless there is already a
-    *     transfer in progress in which case the frame is saved in the second internal framebuffer
-    *     (possibly replacing a previous framebuffer waiting to be displayed).
-    *
-    *   - if vsync_spacing = 0.  Upload to the screen start immedialely unless there is already a
-    *     transfer in progress in which case the frame is saved in the second internal framebuffer
-    *     if is is free otherwise it waits until the transfer completes and is then saved in the
-    *     newly freed internal framebuffer and scheduled to be displayed asap.
-    *
-    *   - if vsync_spacing > 1. screen upload is synchronized with the screen refresh and the
-    *     method waits until vsync_spacing refreshes have occured since the previous update to
-    *     insure a constant framerate equal to  (refresh_rate/vsync_spacing). If a transfer is
-    *     already in progress, it will save the framebuffer in the second internal framebuffer
-    *     if available then schedule the redraw and return immediately. If the second framebuffer
-    *     is already full, the method wait for the current transfer to complete before saving
-    *     the framebuffer and scheduling the redraw and then returning.
-    *
-    *
-    * NOTE: (1) If buffering is disabled, there are not internal copy of the current screen
-                content and therefore differential updates are also disabled (even if a diff
-                buffer is present). Otherwise, if both at least one diff buffer and 1 framebuffer
-                are present, then differnetial updates is enable by default (excpet if overriden
-                by the force_full_redraw parameter).
-    *
-    *       (2) double buffering give a HUGE improvement over the no buffering method at the
-    *           expense of an additionnal internal memory framebuffer (150K).
-    *
-    *       (3) Setting two diffs buffers instead of one cost only a few additonal kilobytes but
-    *           will usually improve the max framerate by a few FPS since is permits to pre-
-    *           compute the diff while the previous update is still ongoing.
-    *
-    *       (4) Triple buffering requires another framebuffer for storing intermediate frames.
-    *           Some testing suggests that triple buffering provides only modest improvement
-    *           over double buffering compared to the associated cost so it should be used only
-    *           if you really have nothing better to do will all that memory !
-    *
-    * ADVICE: USE DOUBLE BUFFERING (I.E. 1 INTERNAL FRAMEBUFFER) WITH 2 DIFF BUFFERS (WITH SIZE
-    *         RANGING FROM 5K TO 10K).
+    *       (2) Setting two diffs buffers instead of one cost only a few additional kilobytes
+    *           yet will usually improve the max framerate significantly since it enables the
+    *           driver to compute the next diff while the previous update is still ongoing.
+    *        
+    *              
+    * ADVICE:  US AN INTERNAL FRAMEBUFFER + 2 DIFF BUFFERS (WITH SIZE RANGING FROM 5K TO 10K).
+    * 
     **/
     void update(const uint16_t* fb, bool force_full_redraw = false);
-
 
 
 
     /**
     *                             PARTIAL SCREEN UPDATE METHOD
     *
-    * Update a part of the screen. The behaviour of the method depend on the current buffering 
+    * Update only part of the screen. The behavior of the method depend on the current buffering 
     * mode and the vsync_spacing parameter.
     *
     * WHEN THE METHOD RETURNS, THE FRAME MAY OR MAY NOT ALREADY BE DISPLAYED ON THE SCREEN BUT
     * THE INPUT FRAMEBUFFER fb CAN STILL BE REUSED IMMEDIATELY IN ANY CASE (A COPY IS MADE WHEN
     * USING ASYNC UPDATES).
     *
-    * - fb represent the rectangular region of the screen [xmin, xmax] x [ymin, ymax] 
-    *   The layout of fb is such that, on the screen pixel(xmin + i,ymin + j) = fb[i + stride*j]
-    *   If stride is not specified, it defaults to (xmax - xmin + 1) which is the width of the
-    *   rectanglular region.
+    * Parameters:
+    * 
+    * - fb : framebuffer to the rectangular region to update.     
+    * 
+    * - [xmin, xmax] x [ymin, ymax] : region of the screen to update  
+    * 
+    * - stride : stride for the supplied framebuffer fb
     *
-    * - redrawNow. If set to true, the screen is redrawn immediately (possibly async. if an internal
-    *   framebuffer is set). If set to false (and an internal framebuffer is available), then the 
-    *   change are stored in the internal framebuffer but are not drawn on the screen. This permits to
-    *   call regionUpdate() several times without drawing onto the screen and only draw all the changes  
-    *   simultenously when needed. This is particularly convienient when using the lvgl library. 
+    *            The layout of fb is such that, 
+    *   
+    *                 screen pixel(xmin + i, ymin + j) = fb[i + stride*j]
+    *                 
+    *            -> If stride is not specified, it defaults to (xmax - xmin + 1) which is the
+    *                width of the rectangular region.
+    *    
+    * - redrawNow: - If set to true, the screen is redrawn immediately (async if an internal   
+    * -              framebuffer is set). 
+    *              - If set to false and an internal framebuffer is available, then the changes   
+    *                are stored in the internal framebuffer but are not drawn on the screen. 
+    *                This permits to call regionUpdate() several times without drawing onto the 
+    *                screen and then draw all the changes simultaneously when needed. This is 
+    *                particularly convenient when using the lvgl library. 
     *
     *
-    * NOTE: (1) Similarly to the 'update()' method, this method wil use vsync when enabled. 
+    * NOTE: (1) Similarly to the 'update()' method, this method will use VSync when enabled
+    *           depending on the value of the vsync_spacing parameter 
     *
     *       (2) In there is no internal buffer, then screen is updated immediately even if
     *           redrawNow=false.  
     *
-    *       (3) For this method, TWO diff buffers are required to use differntial updates,
-    *           On the other hand, only one internal framebuffer is used (setting a second one is
-    *           useless).
+    *       (3) For this method, TWO DIFF BUFFERS ARE REQUIRED FOR DIFFERENTIAL UPDATE !
+    *           Setting only one diff buffer will disable differential updates :(
     *
-    * ADVICE: USE DOUBLE BUFFERING (I.E. 1 INTERNAL FRAMEBUFFER) WITH 2 DIFF BUFFERS (WITH SIZE
-    *         RANGING FROM 3K TO 6K).
     **/    
     void updateRegion(bool redrawNow, const uint16_t* fb, int xmin, int xmax, int ymin, int ymax, int stride = -1); 
+
 
 
     /**
@@ -980,34 +963,17 @@ public:
     * 
     * Returns immediately if no update is ongoing.
     * 
-    * NOTE: This method should not be called in normal use cases as it will create a 
+    * NOTE: This method should not be called normally it will create a 
             "busy wait" and wastes precious CPU time...
     **/
-    inline void waitUpdateAsyncComplete() 
-        {
-        if (_dma_state != ILI9341_T4_DMA_IDLE)
-            {
-            elapsedMillis em = 0;
-            while ((_dma_state != ILI9341_T4_DMA_IDLE))
-                {
-                if (em > 2)
-                    { // after a few ms, we call yield in each loop.
-                    yield();
-                    if (em > 1000)
-                        { // waiting for a full second. Really looks like its hanging. 
-                        _println("ILI9341_T4Driver: Hanging in waitUpdateAsyncComplete()...");
-                        em = 0;
-                        }
-                    }
-                }
-            }
-        }
+    void waitUpdateAsyncComplete() { _waitUpdateAsyncComplete(); }
+
 
 
     /**
     * Return true if an Async update is currently ongoing and false otherwise.
     **/
-    inline bool asyncUpdateActive() const { return (_dma_state != ILI9341_T4_DMA_IDLE); }
+    bool asyncUpdateActive() const { return (_dma_state != ILI9341_T4_DMA_IDLE); }
 
 
 
@@ -1017,17 +983,35 @@ public:
     ****************************************************************************************************
     *
     * Statistics
-    *
+    * 
+    * The driver monitor many stats which are useful for performance optimization. Two methods are 
+    * particularly useful:
+    * 
+    * - overlayFPS() : add an FPS counter on a corner of the screen
+    * - printStats() : Print out all the statistics on the output stream.     
+    * 
+    * Note: Some methods return a 'StatsVar' object which is a class that holds stats about a sequence 
+    *       of values: c.f. StatsVar.h for more info. 
+    *       
     ****************************************************************************************************
     ****************************************************************************************************/
 
 
     /**
-    * Draw the FPS counter on a corner of the framebuffer with given colors and opacity. 
+    * Draw the FPS counter on a corner of the supplied framebuffer with given colors 
+    * and opacity.
+    * 
+    * The FPS displayed correspond to the number of frames uploaded by the driver 
+    * during the last second.
+    * 
     * Call this method just before update() to display the instantaneous framerate. 
     * 
-    * position: 0= top right,  1=bottom right,  3=bottom left,  4=top left
-    * 
+    * - fb : the framebuffer to draw onto
+    * - position: position of the counter on the framebuffer:
+    *             0= top right,  1=bottom right,  3=bottom left,  4=top left
+    * - fg_color : foreground color.   
+    * - bg_color : background color  
+    * - opacity : opacity of the counter between 0.0f=transparent and 1.0f=opaque. 
     **/
     void overlayFPS(uint16_t* fb, 
                     int position = ILI9441_T4_DEFAULT_FPS_COUNTER_POSITION, 
@@ -1056,20 +1040,21 @@ public:
 
     /**
     * Return the 'average' framerate in Hz which is simply computed as the 
-    * total number of frame drawn divided the total time since the last rest. 
+    * total number of frame drawn divided the total time since the last reset. 
     **/
     float statsFramerate() const { return  (_stats_nb_frame == 0) ? 0.0f : ((_stats_nb_frame * 1000.0f) / _stats_elapsed_total); }
 
 
     /**
     * Return the instantaneous FPS i.e. the number of frames displayed during
-    * the previous second.
+    * the previous second. This is the same value that is drawn with the
+    * overlayFPS() method. 
     **/
     uint32_t statsCurrentFPS() const { return _stats_current_fps;  }
 
 
     /**
-    * Return an object containing statistics about the instantaneous FPS.
+    * Return an object with detailed statistics about the instantaneous FPS.
     **/
     StatsVar statsFPS() const { return _statsvar_fps; }
 
@@ -1077,7 +1062,9 @@ public:
     /**
     * Return an object containing statistics about the CPU time
     * used spend preparing and updating the screen (dma interrupt time). 
-    * !!! This does NOT count the time needed to create the diffs. !!!
+    * 
+    * -> This does NOT count the time needed to create the diffs which
+    *    can be queried separately directly from the diff buffers. 
     **/
     StatsVar statsCPUtimePerFrame() const { return _statsvar_cputime; }
 
@@ -1085,7 +1072,12 @@ public:
     /**
     * Return an object containing statistics about the time taken
     * for uploading each frame. 
-    * !!! This does NOT count the time needed to create the diffs. !!!
+    * 
+    * -> When using async update, this time incorporate the 'DMA time'
+    *    where the CPU remains available. 
+    *
+    * -> This does NOT count the time needed to create the diffs which
+    *    can be queried separately directly from the diff buffers.
     **/
     StatsVar statsUploadtimePerFrame() const { return _statsvar_uploadtime; }
 
@@ -1099,74 +1091,75 @@ public:
 
     /**
     * Return the ratio of the average number of pixels uploaded per frame 
-    * compared to the total number of pixel is the screen.
+    * compared to the total number of pixel on the screen.
     **/
     float statsRatioPixelPerFrame() const  { return (((float)_statsvar_uploaded_pixels.avg()) / ILI9341_T4_NB_PIXELS); }
 
 
     /**
     * Return an object containing statistics about the number of transactions
-    * per frame.
+    * per frame (i.e. roughly the number of pieces in the diff). 
     **/
     StatsVar statsTransactionsPerFrame() const { return _statsvar_transactions; }
 
 
     /**
-    * Return an estimate of the speed up obtained by using the differential updates 
+    * Return an estimate of the speed-up obtained by using the differential updates 
     * compared to full updates. This estimate is only about the time needed to upload 
-    * the pixels without taking vsync into account. 
+    * the pixels without taking VSync into account. 
     * 
     * If the value returned is smaller than one. It means that there is not real 
-    * benefits to using differential updates so it should be disabled. 
+    * benefits to using differential updates and so it should be disabled.
     **/
-    float statsDiffSpeedUp() const
-        {
-        if ((!diffUpdateActive())|| (_statsvar_transactions.count() == 0)) return 1.0f;
-        return ((float)(ILI9341_T4_NB_PIXELS * 16)) / ((float)_spi_clock) * (1000000.0f / _statsvar_uploadtime.avg());
-        }
+    float statsDiffSpeedUp() const { return ((!diffUpdateActive())|| (_statsvar_transactions.count() == 0)) ? 1.0f : (((float)(ILI9341_T4_NB_PIXELS * 16)) / ((float)_spi_clock) * (1000000.0f / _statsvar_uploadtime.avg())); }
 
 
     /**
     * Return an object containing statistics about the "margin" during upload a vsynced frame.
     * 
-    * The margin of a vsynced uploaded frame is minimum difference during the upload between 
-    * the position of the pixels being uploaded and the screen scanline currently beign refreshed.
+    * The margin of a VSynced uploaded frame is minimum difference during the upload between 
+    * the position of the pixels being uploaded and the screen scanline currently being refreshed.
     *
-    * When this value becomes negative, it means tearing occurs. A large positive value means that 
-    * there is plenty of time for redraw without tearing so the framerate may be increased.
+    * When this value becomes negative, it means screen tearing occurs and the SPI speed should be
+    * increased (or the refreshrate decreased). On the other hand, a large positive value means 
+    * that there is plenty of time for redraw without tearing :-)
     **/
     StatsVar statsMarginPerFrame() const { return _statsvar_margin; }
 
 
     /**
-    * Return an object containing the effective statistics about the vsync_spacing beween screen refresh. 
+    * Return an object containing the effective statistics about the vsync_spacing between screen 
+    * refresh. If the framerate is stable this value should be close to the requested value and
+    * the standard deviation (std) should be small.
     **/
     StatsVar statsRealVSyncSpacing() const { return _statsvar_vsyncspacing; }
 
 
     /**
-    * Return the number of frame with vsync active for which screen tearing may
-    * have occured.
+    * Return the number of frames with VSync active for which screen tearing (may) have occurred.
     **/
     uint32_t statsNbTeared() const { return _nbteared; }
 
 
     /**
-    * Return the ratio of frame with vsync active for which screen tearing
-    * may have occured.
-    * (returns 1.0f when vsync is OFF).  
+    * Return the ratio of frames with VSync active for which screen tearing may have occurred.
+    * (returns 1.0f when VSync is disabled).  
     **/
     float statsRatioTeared() const { return (_vsync_spacing <= 0) ? 1.0f : ((_statsvar_vsyncspacing.count() == 0) ? 0.0f : (((float)_nbteared) / _statsvar_margin.count())); }
 
 
     /**
-    * Output statistics about the object into a stream.
+    * Output many statistics about the object into a stream.
     * 
-    * The infos are sent to the output stream set with the `output()` method.
+    * The output stream set with the `output()` method is used.
     *
-    * Useful for fine-tuning the parameters.
+    * This method is very useful for fine-tuning the parameters and checking
+    * that the parameters (gap, vsync_spacing, refresh rate, diff buffer size...) 
+    * are correctly set. 
+    * 
+    * - diff_stats : true to print also the stats about the diff buffer in use.
     **/
-    void printStats() const;
+    void printStats(bool diff_stats = true) const;
 
 
 
@@ -1177,7 +1170,7 @@ public:
     *
     * Touch screen.
     *
-    * These methods are available only if the XPT2048 touchscreen is on the same SPI bus as the screen
+    * These methods are available only if the XPT2046 touchscreen is on the same SPI bus as the screen
     * and the touch_cs (and optionally _touch_irq) pin have been assigned in the constructor.
     *
     ****************************************************************************************************
@@ -1186,7 +1179,7 @@ public:
 
     /**
     * Return the number of milliseconds since the touch interrupt was last triggered or -1 if no touch
-    * interrupt occured since the last call to lastTouched().
+    * interrupt occurred since the last call to lastTouched().
     *
     * If the touch_irq pin is not assigned, this method always return -1;
     *
@@ -1201,14 +1194,13 @@ public:
     * Return true if the screen is being touched.
     * 
     * The coord. (x,y) returned are given w.r.t. the current screen orientation if calibration
-    * data are loaded and are 'raw' value (indep. of orientation) is no calibration data
+    * data are loaded but are 'raw' value (independent of orientation) is no calibration data
     * is currently loaded. 
     * 
-    * If the touch_irq pin is assigned, it will avoid using the spi bus whenever possible.
+    * If the touch_irq pin is assigned, the method will avoid using the SPI bus whenever possible.
     *
-    * If the spi bus must be used. The method will wait until the current ongoinc async
-    * transfer completes (if any). This means that this method may stall for a few 
-    * milliseconds. 
+    * If the SPI bus must be used. The method will wait until the current ongoing transfer
+    * completes (if any). This means that this method may stall for a few milliseconds. 
     **/
     bool readTouch(int& x, int& y, int& z);
 
@@ -1223,17 +1215,19 @@ public:
     * - Once calibration has been set, readTouch() will subsequently return   
     *   the (x,y) coordinates according to the current orientation.
     *   
-    * - 'touchCalibration' is a set of 4 value corresponding to touch values for 
-    * positions {x[0], x[239], y[0], y[319]} in orientation 0. This is the
-    * same array as returned by calibrateTouch();
+    * - 'touchCalibration' is a set of 4 values corresponding to touch values   
+    *    for positions {x[0], x[239], y[0], y[319]} in orientation 0. This is 
+    *    the same array as returned by calibrateTouch();
     **/
     void setTouchCalibration(int touchCalibration[4] = nullptr);
 
 
     /**
-    * Query the current calibration data for the touchscreen. 
+    * Query the current calibration data loaded for the touchscreen. 
+    * 
     * Return true and put the data in 'touchCalibration' if available.
-    * Otherwise, return false and do not modify 'touchCalibration'.
+    * Otherwise, return false and do not modify the touchCalibration
+    * array.
     **/
     bool getTouchCalibration(int touchCalibration[4]);
 
@@ -1241,31 +1235,36 @@ public:
     /**
     * Perform interactive touchscreen calibration. 
     * 
-    * Instructions for calibration are given to the output stream
-    * set with the `output()` method.
+    * Instructions for calibration are given on screen but also 
+    * on the output stream set with the `output()` method.
     *  
-    * Calibration data is stored in 'calibrateTouch' if not null.
+    * - After the method returns, calibration data are also loaded 
+    *   onto the driver and can be queried with getTouchCalibration(). 
+    * 
+    * - if touchCalibration[4] supplied is not null, the calibration   
+    *   data are also copied into that array upon return of the method.
     **/
     void calibrateTouch(int touchCalibration[4] = nullptr);
 
 
     /**
     * Set the threshold value for detecting a touch event. 
+    * 
     * The default value should be good enough in most cases.
     **/
-    inline void setTouchThreshold(int Zthreshold = ILI9341_T4_TOUCH_Z_THRESHOLD)
-        {
-        _touch_z_threshold = Zthreshold;
-        }
+    void setTouchThreshold(int Zthreshold = ILI9341_T4_TOUCH_Z_THRESHOLD) { _touch_z_threshold = Zthreshold; }
 
 
     /**
     * Return the current threshold value for touch events.
     **/
-    inline int getTouchThreshold()
-        {
-        return _touch_z_threshold;
-        }
+    int getTouchThreshold() const { return _touch_z_threshold; }
+
+
+
+
+
+
 
 
 private:
@@ -1276,6 +1275,7 @@ private:
     /**********************************************************************************************************
     *
     * You shall go no further.
+    * 
     * Hey ! This is private ! don't look !
     *
     ***********************************************************************************************************/
@@ -1332,23 +1332,11 @@ private:
     DiffBuffDummy _dd1, _dd2;                    // the dummy diff themselves. 
 
     uint16_t* volatile _fb1;                    // first internal framebuffer
-    uint16_t* volatile _fb2;                    // second internal framebuffer (if non null, then _fb1 is also non zero). 
     uint16_t* volatile _mirrorfb;               // framebuffer that currently mirrors the screen (or will mirror it when upload completes).
-
     DiffBuffBase* volatile _ongoingDiff;        // should be nullptr when mirror_fb = true.
                                                 // when _mirrorfb = false, if this is not equal to nullptr, then this means that
                                                 // the diff pointed here contains the difference between _fb1 and the screen
-
-    volatile bool _fb2full;                     // true if the second framebuffer is currently full and waiting to be uploaded. 
-
-
-    /** called when fb2 is full and must be drawn on the screen */
-    void _buffer2fullCB();
-
-
-    /** the main update method */
-    void _update(const uint16_t* fb, bool force_full_redraw);
-
+    
 
     /**
     * Update part of the screen using a diff buffer object representing the changes between
@@ -1365,12 +1353,11 @@ private:
     * no vsync (i.e. as fast as possible)
     * no dma.
     **/
-    public:
-        void _updateRectNow(const uint16_t* sub_fb, int xmin, int xmax, int ymin, int ymax, int stride);
+    void _updateRectNow(const uint16_t* sub_fb, int xmin, int xmax, int ymin, int ymax, int stride);
 
+    void _pushRect(uint16_t color, int xmin, int xmax, int ymin, int ymax);
 
-
-    void _pushpixels(const uint16_t* fb, int x, int y, int len)  __attribute__((always_inline))
+    void _pushpixels(const uint16_t* fb, int x, int y, int len)  ILI9341_T4_ALWAYS_INLINE
         {
         switch (_rotation)
             {
@@ -1389,6 +1376,31 @@ private:
     void _pushpixels_mode2(const uint16_t* fb, int x, int y, int len);
 
     void _pushpixels_mode3(const uint16_t* fb, int x, int y, int len);
+
+
+
+    /**
+    * Wait until transfer is complete
+    **/
+    void _waitUpdateAsyncComplete()
+        {
+        if (_dma_state != ILI9341_T4_DMA_IDLE)
+            {
+            elapsedMillis em = 0;
+            while ((_dma_state != ILI9341_T4_DMA_IDLE))
+                {
+                if (em > 2)
+                    { // after a few ms, we call yield in each loop.
+                    yield();
+                    if (em > 1000)
+                        { // waiting for a full second. Really looks like its hanging. 
+                        _println("ILI9341_T4Driver: Hanging in _waitUpdateAsyncComplete()...");
+                        em = 0;
+                        }
+                    }
+                }
+            }
+        }
 
 
     /**
@@ -1418,18 +1430,12 @@ private:
     void _swapdummydiff() { auto t = _dummydiff1; _dummydiff1 = _dummydiff2; _dummydiff2 = t; }
 
 
-    /** swap _fb1 and _fb2 */
-    void _swapfb() { auto t = _fb1; _fb1 = _fb2; _fb2 = t; }
-
-
 
 
 
     /**********************************************************************************************************
     * About DMA
     ***********************************************************************************************************/
-
-    volatile methodCB_t _pcb;                   // function callback (nullptr if none) 
 
     const uint16_t* volatile _fb;               // the framebuffer to push
 
@@ -1472,7 +1478,7 @@ private:
     static void _spiInterruptSPI2_software() { _dmaObject[2]->_spiInterrupt_software(); }
 
     // called when doing partial diff redraw
-    inline void _spiInterrupt_software() __attribute__((always_inline))
+    void _spiInterrupt_software() ILI9341_T4_ALWAYS_INLINE
         {
         //noInterrupts();        // UNNEEDED ?
         _toggle(_dcport, _dcpinmask);
@@ -1498,7 +1504,7 @@ private:
     static void _spiInterruptSPI2_hardware() { _dmaObject[2]->_spiInterrupt_hardware(); }
 
     // called when doing partial diff redraw
-    inline void _spiInterrupt_hardware() __attribute__((always_inline))        
+    void _spiInterrupt_hardware() ILI9341_T4_ALWAYS_INLINE        
         {
         //noInterrupts();        // UNNEEDED ?
         _pimxrt_spi->IER = 0; // disable interrupt
@@ -1517,15 +1523,11 @@ private:
 
 
 
-    /** set/remove  the callback at end of transfer */
-    void _setCB(methodCB_t pcb = nullptr) { _pcb = pcb; }
-
-
     /**
      * flush the cache if the array is located in DMAMEM.
      * This can take a while (100us) so don't abuse it !
      **/
-    void _flush_cache(const void* ptr, size_t len) __attribute__((always_inline))
+    void _flush_cache(const void* ptr, size_t len) ILI9341_T4_ALWAYS_INLINE
         {
         if ((uint32_t)ptr >= 0x20200000u) arm_dcache_flush((void*)ptr, len);
         asm("dsb");
@@ -1548,7 +1550,6 @@ private:
     ***********************************************************************************************************/
 
     uint32_t _period_mode0;                     // number of microsceonds between screen refresh for the fastest mode. 
-
     uint32_t _period;                           // number of microsceonds between screen refresh. 
     elapsedMicros _synced_em;                   // number of microseconds sinces the last scanline synchronization
     uint32_t _synced_scanline;                  // scanline at the time of the last synchronization
@@ -1586,7 +1587,7 @@ private:
     /**
     * Convert a ratio in [0.0f, 1.0f] to a scanline in [|0, ILI9341_T4_NB_SCANLINES - 1|]
     **/
-    int _ratioToScanline(float r) const __attribute__((always_inline))
+    int _ratioToScanline(float r) const ILI9341_T4_ALWAYS_INLINE
         {
         int l = (int)(r * ILI9341_T4_NB_SCANLINES);
         l = ILI9341Driver::_clip((int)l, (int)0, (int)ILI9341_T4_NB_SCANLINES - 1);
@@ -1597,7 +1598,7 @@ private:
     /**
     * Return true is the current scanline is in the given range [|start, end|]
     **/
-    bool _isScanlineInRange(int start, int end)  __attribute__((always_inline))
+    bool _isScanlineInRange(int start, int end)  ILI9341_T4_ALWAYS_INLINE
         {   
         int v = _getScanLine(false);
         return ((start <= v) && (v <= end));
@@ -1621,7 +1622,7 @@ private:
     * Return the number of microseconds remaining until we reach a given scanline.
     * WARNING: if sync = true, SPI must NOT be in use !
     **/
-    uint32_t _microToReachScanLine(int scanline, bool sync) __attribute__((always_inline))
+    uint32_t _microToReachScanLine(int scanline, bool sync) ILI9341_T4_ALWAYS_INLINE
         {
         int now = _getScanLine(sync);
         const uint32_t diff = (now <= scanline) ? (uint32_t)(scanline - now) : (uint32_t)(scanline - now + ILI9341_T4_NB_SCANLINES);
@@ -1681,7 +1682,7 @@ private:
 
 
     /** Set the timer to ring in us microseconds. */
-    void _setTimerIn(uint32_t us, methodCB_t timercb) __attribute__((always_inline))
+    void _setTimerIn(uint32_t us, methodCB_t timercb) ILI9341_T4_ALWAYS_INLINE
         {
         noInterrupts();
         _it.end(); // stop ongoing timer before changing callback method. 
@@ -1717,7 +1718,7 @@ private:
 
 
     /** Set the timer to ring when micros() reaches ustime */
-    void _setTimerAt(uint32_t ustime, methodCB_t timercb) __attribute__((always_inline))
+    void _setTimerAt(uint32_t ustime, methodCB_t timercb) ILI9341_T4_ALWAYS_INLINE
         {
         const uint32_t m = micros();
         const uint32_t max_us = (max(_vsync_spacing, 1) + 1) * _period;
@@ -1740,7 +1741,7 @@ private:
 
 
     /** Cancel the timer (if ticking). */
-    void _cancelTimer() __attribute__((always_inline))
+    void _cancelTimer() ILI9341_T4_ALWAYS_INLINE
     {
         noInterrupts();
         _it.end();
@@ -1750,7 +1751,7 @@ private:
 
 
     /** Query if the timer is currently ticking. */
-    bool _isTimer() const __attribute__((always_inline))
+    bool _isTimer() const ILI9341_T4_ALWAYS_INLINE
     {
         return _istimer;
     }
@@ -1762,7 +1763,7 @@ private:
     * (adapted from the tgx library)
     ***********************************************************************************************************/
 
-    static inline uint16_t _blend32(uint32_t bg_col, uint32_t fg_col, uint32_t a)
+    static uint16_t _blend32(uint32_t bg_col, uint32_t fg_col, uint32_t a) ILI9341_T4_ALWAYS_INLINE
         {
         const uint32_t bg = (bg_col | (bg_col << 16)) & 0b00000111111000001111100000011111;
         const uint32_t fg = (fg_col | (fg_col << 16)) & 0b00000111111000001111100000011111;
@@ -1771,7 +1772,7 @@ private:
         }
 
 
-    static inline uint32_t _fetchbit(const uint8_t* p, uint32_t index) { return (p[index >> 3] & (0x80 >> (index & 7))); }
+    static uint32_t _fetchbit(const uint8_t* p, uint32_t index) ILI9341_T4_ALWAYS_INLINE  { return (p[index >> 3] & (0x80 >> (index & 7))); }
 
 
     static uint32_t _fetchbits_unsigned(const uint8_t* p, uint32_t index, uint32_t required);
@@ -1789,7 +1790,7 @@ private:
     static void _measureText(const char* text, int pos_x, int pos_y, int& min_x, int& max_x, int& min_y, int& max_y, const void* pfont, bool start_newline_at_0);
 
 
-    static void _drawTextILI(const char* text, int& pos_x, int  pos_y, uint16_t col, const void* pfont, bool start_newline_at_0, int lx, int ly, int stride, uint16_t* buffer, float opacity);
+    static void _drawTextILI(const char* text, int pos_x, int pos_y, uint16_t col, const void* pfont, bool start_newline_at_0, int lx, int ly, int stride, uint16_t* buffer, float opacity);
 
 
     static void _drawCharILI(char c, int & pos_x, int & pos_y, uint16_t col, const void * pfont, int lx, int ly, int stride, uint16_t* buffer, float opacity);
@@ -1797,8 +1798,11 @@ private:
 
     static void _drawCharBitmap_4BPP(const uint8_t* bitmap, int rsx, int b_up, int b_left, int sx, int sy, int x, int y, uint16_t col, int stride, uint16_t* buffer, float opacity);
 
-
     static void _fillRect(int xmin, int xmax, int ymin, int ymax, int lx, int ly, int stride, uint16_t* buffer, uint16_t color, float opacity);
+
+    void _uploadText(const char* text, int pos_x, int pos_y, uint16_t col, uint16_t col_bg, const void* pfont, bool start_newline_at_0);
+
+    void _uploadChar(char c, int & pos_x, int & pos_y, uint16_t col, uint16_t col_bg, const void* pfont);
 
 
   
@@ -1854,25 +1858,25 @@ private:
     }
 
 
-    void _restartCpuTime() __attribute__((always_inline))
+    void _restartCpuTime() ILI9341_T4_ALWAYS_INLINE
     {
         _stats_elapsed_cputime = 0;
     }
 
 
-    void _pauseCpuTime() __attribute__((always_inline))
+    void _pauseCpuTime() ILI9341_T4_ALWAYS_INLINE
     {
         _stats_cputime += _stats_elapsed_cputime;
     }
 
 
-    void _restartUploadTime() __attribute__((always_inline))
+    void _restartUploadTime() ILI9341_T4_ALWAYS_INLINE
     {
         _stats_elapsed_uploadtime = 0;
     }
 
 
-    void _pauseUploadTime() __attribute__((always_inline))
+    void _pauseUploadTime() ILI9341_T4_ALWAYS_INLINE
     {
         _stats_uploadtime += _stats_elapsed_uploadtime;
     }
@@ -1897,7 +1901,7 @@ private:
     uint8_t _sclk, _mosi, _miso;                // for the screen
     uint8_t _rst;                               // 
 
-    uint8_t _touch_cs, _touch_irq;              // pins for XPT2048 if present
+    uint8_t _touch_cs, _touch_irq;              // pins for XPT2046 if present
 
     uint8_t  _spi_num;                          //  spi busd number: 0 1 or 2
     SPIClass* _pspi = nullptr;                  // the main spi object
@@ -1927,7 +1931,7 @@ private:
     void _drawRect(int xmin, int xmax, int ymin, int ymax, uint16_t color);
 
 
-    void _beginSPITransaction(uint32_t clock) __attribute__((always_inline))
+    void _beginSPITransaction(uint32_t clock) ILI9341_T4_ALWAYS_INLINE
         {
         _pspi->beginTransaction(SPISettings(clock, MSBFIRST, SPI_MODE0));
         _spi_tcr_current = _pimxrt_spi->TCR; //  DC is on hardware CS
@@ -1936,7 +1940,7 @@ private:
         }
 
 
-    void _endSPITransaction() __attribute__((always_inline))
+    void _endSPITransaction() ILI9341_T4_ALWAYS_INLINE
         {
         if (_csport) _directWriteHigh(_csport, _cspinmask); // drive CS high
         _pspi->endTransaction();
@@ -1946,7 +1950,7 @@ private:
     uint8_t _readcommand8(uint8_t reg, uint8_t index = 0, int timeout_ms = 10);
 
 
-    void _writecommand_cont(uint8_t c) __attribute__((always_inline))
+    void _writecommand_cont(uint8_t c) ILI9341_T4_ALWAYS_INLINE
         {
         _maybeUpdateTCR(_tcr_dc_assert | LPSPI_TCR_FRAMESZ(7) | LPSPI_TCR_CONT); // 
         _pimxrt_spi->TDR = c;
@@ -1955,7 +1959,7 @@ private:
         }
 
 
-    void _writedata8_cont(uint8_t c) __attribute__((always_inline))
+    void _writedata8_cont(uint8_t c) ILI9341_T4_ALWAYS_INLINE
         {
         _maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(7) | LPSPI_TCR_CONT);
         _pimxrt_spi->TDR = c;
@@ -1964,7 +1968,7 @@ private:
         }
 
 
-    void _writedata16_cont(uint16_t d) __attribute__((always_inline))
+    void _writedata16_cont(uint16_t d) ILI9341_T4_ALWAYS_INLINE
         {
         _maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(15) | LPSPI_TCR_CONT);
         _pimxrt_spi->TDR = d;
@@ -1973,7 +1977,7 @@ private:
         }
 
 
-    void _writecommand_last(uint8_t c) __attribute__((always_inline))
+    void _writecommand_last(uint8_t c) ILI9341_T4_ALWAYS_INLINE
         {   
         _maybeUpdateTCR(_tcr_dc_assert | LPSPI_TCR_FRAMESZ(7));
         _pimxrt_spi->TDR = c;
@@ -1983,7 +1987,7 @@ private:
         }
 
 
-    void _writedata8_last(uint8_t c) __attribute__((always_inline))
+    void _writedata8_last(uint8_t c) ILI9341_T4_ALWAYS_INLINE
         {
         _maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(7));
         _pimxrt_spi->TDR = c;
@@ -1993,7 +1997,7 @@ private:
         }
 
 
-    void _writedata16_last(uint16_t d) __attribute__((always_inline))
+    void _writedata16_last(uint16_t d) ILI9341_T4_ALWAYS_INLINE
         {
         _maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(15));
         _pimxrt_spi->TDR = d;
@@ -2008,7 +2012,7 @@ private:
 #define ILI9341_T4_DC_PCS_MASK   (LPSPI_TCR_PCS(3))
 
 
-    void _maybeUpdateTCR(uint32_t requested_tcr_state) __attribute__((always_inline))
+    void _maybeUpdateTCR(uint32_t requested_tcr_state) ILI9341_T4_ALWAYS_INLINE
         {
         const uint32_t spi_tcr_new = (_spi_tcr_current & (~ILI9341_T4_TCR_MASK)) | (requested_tcr_state & ILI9341_T4_TCR_MASK);        
         if (spi_tcr_new != _spi_tcr_current)
@@ -2037,7 +2041,7 @@ private:
 
 
     
-    void _dma_assert_dc() __attribute__((always_inline))
+    void _dma_assert_dc() ILI9341_T4_ALWAYS_INLINE
         {       
         _pimxrt_spi->TCR = _dma_spi_tcr_assert;
         if (!_hardware_dc)
@@ -2047,7 +2051,7 @@ private:
             }
         }
     
-    void _dma_deassert_dc() __attribute__((always_inline))
+    void _dma_deassert_dc() ILI9341_T4_ALWAYS_INLINE
         {
         _pimxrt_spi->TCR = _dma_spi_tcr_deassert;
         if (!_hardware_dc)
@@ -2080,11 +2084,11 @@ private:
 
 
     //. From Onewire utility files
-    void _directWriteLow(volatile uint32_t* base, uint32_t mask) __attribute__((always_inline)) { *(base + 34) = mask; }
+    void _directWriteLow(volatile uint32_t* base, uint32_t mask) ILI9341_T4_ALWAYS_INLINE { *(base + 34) = mask; }
 
-    void _directWriteHigh(volatile uint32_t* base, uint32_t mask) __attribute__((always_inline)) { *(base + 33) = mask; }
+    void _directWriteHigh(volatile uint32_t* base, uint32_t mask) ILI9341_T4_ALWAYS_INLINE { *(base + 33) = mask; }
 
-    void _toggle(volatile uint32_t* base, uint32_t mask) __attribute__((always_inline)) { *(base + 35) = mask; }
+    void _toggle(volatile uint32_t* base, uint32_t mask) ILI9341_T4_ALWAYS_INLINE { *(base + 35) = mask; }
 
 
     /**********************************************************************************************************
@@ -2135,20 +2139,20 @@ private:
 
 
     /** convert from raw value to x coord (in orientation 0) */
-    inline int _mapTouchX(int x, int A, int B)
+    int _mapTouchX(int x, int A, int B)
         {
         return ILI9341Driver::_clip<int>((int)roundf(ILI9341_T4_TFTWIDTH * ((float)(x - A)) / (B - A)), (int)0, (int)ILI9341_T4_TFTWIDTH - 1);
         }
 
     /** convert from raw value to y coord (in orientation 0) */
-    inline int _mapTouchY(int y, int C, int D)
+    int _mapTouchY(int y, int C, int D)
         {
         return ILI9341Driver::_clip<int>((int)roundf(ILI9341_T4_TFTHEIGHT * ((float)(y - C)) / (D - C)), (int)0, (int)ILI9341_T4_TFTHEIGHT - 1);
         }
 
 
     /** draw a calibration rectangle */
-    void _calibRect(int cx, int cy, int R);
+    void _calibRect(int cx, int cy, int R, uint16_t col_ext, uint16_t col_int);
 
 
     /** used for touch calibration */
