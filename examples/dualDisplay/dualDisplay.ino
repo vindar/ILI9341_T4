@@ -239,9 +239,9 @@ void setup() {
         delay(1000);
         }
 
-    // set paramters for the first display
+    // set parameters for the first display
     tft0.setRotation(0);                 // portrait mode 240 x320
-    tft0.setFramebuffers(internal_fb0);  // set 1 internal framebuffer -> activate double buffering.
+    tft0.setFramebuffer(internal_fb0);   // set the internal framebuffer (enables double buffering)
     tft0.setDiffBuffers(&diff1, &diff2); // set the 2 diff buffers => activate differential updates. 
     tft0.setDiffGap(4);                  // use a small gap for the diff buffers
     tft0.setRefreshRate(150);            // max refresh rate. 
@@ -249,7 +249,7 @@ void setup() {
 
     // set parameters for the second display
     tft1.setRotation(0);                 // portrait mode 240 x320
-    tft1.setFramebuffers(internal_fb1);  // set 1 internal framebuffer -> activate double buffering.
+    tft1.setFramebuffer(internal_fb1);   // set the internal framebuffer (enables double buffering)
     tft1.setDiffBuffers(&diff3, &diff4); // set the 2 diff buffers => activate differential updates. 
     tft1.setDiffGap(4);                  // use a small gap for the diff buffers
     tft1.setRefreshRate(150);            // max refresh rate. 

@@ -159,20 +159,12 @@ void setup()
     {
     Serial.begin(9600);
 
-    tft.output(&Serial);                // output debug infos to serial port. 
-
-    // initialize the display
-    while (!tft.begin())
-        {
-        Serial.println("Initialization error...");
-        delay(1000);
-        }
-
+    tft.output(&Serial);                // output debug infos to serial port.     
+    while (!tft.begin());               // initialize the display
     tft.setRotation(3);                 // landscape mode 320x240
-    tft.setFramebuffers(internal_fb);   // set 1 internal framebuffer -> activate double buffering.
+    tft.setFramebuffer(internal_fb);    // set the internal framebuffer (enables double buffering)
     tft.setDiffBuffers(&diff1, &diff2); // set the 2 diff buffers => activate differential updates. 
     tft.setDiffGap(4);                  // use a small gap for the diff buffers (useful because cells are small...)
-
     tft.setRefreshRate(120);            // Set the refresh rate to around 120Hz
     tft.setVSyncSpacing(1);             // set framerate = refreshrate (we must draw the fast for this to works: ok in our case). 
 

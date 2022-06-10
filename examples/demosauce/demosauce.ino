@@ -167,28 +167,21 @@ void setup()
     Serial.begin(9600);
 
     tft.output(&Serial);                // output debug infos to serial port. 
-    
-    while (!tft.begin(SPI_SPEED))
-        {
-        Serial.println("Initialization error...");
-        delay(1000);
-        }
-
-    tft.setRotation(3); // landscape 320x240
-    tft.setFramebuffers(internal_fb); // one internal framebuffer
+    while (!tft.begin(SPI_SPEED));      // init the display
+    tft.setRotation(3);                 // landscape 320x240
+    tft.setFramebuffer(internal_fb);    // internal framebuffer
     tft.setDiffBuffers(&diff1, &diff2); // 2 diff buffers
-    tft.setDiffGap(3); // very small gap !
-    tft.setRefreshRate(120); // 120hz refresh rate
-
-    tft.setVSyncSpacing(1); // fps lock at max 120hz (may also try 0 = max fps and 2 = locked at 60fps
+    tft.setDiffGap(3);                  // very small gap !
+    tft.setRefreshRate(120);            // 120hz refresh rate
+    tft.setVSyncSpacing(1);             // fps lock at max 120hz (may also try 0 = max fps and 2 = locked at 60fps
 
     if (PIN_BACKLIGHT != 255)
-        {
+        { // make sure backlight is on is needed. 
         pinMode(PIN_BACKLIGHT, OUTPUT);
         digitalWrite(PIN_BACKLIGHT, HIGH);
         }
 
-    tft.setCanvas(fb, LX, LY); // set the framebuffer we draw onto.
+    tft.setCanvas(fb, LX, LY); // set the framebuffer we draw onto (extended method from ILI9341Wrapper).
 
 
     // Microphone

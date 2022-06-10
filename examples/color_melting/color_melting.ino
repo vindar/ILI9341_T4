@@ -116,24 +116,16 @@ void setup()
     {
     Serial.begin(9600);
 
-    tft.output(&Serial);                // output debug infos to serial port. 
- 
-    while (!tft.begin(SPI_SPEED))
-        {
-        Serial.println("Initialization error...");
-        delay(1000);
-        }
-
-
-    LX = tft.width();  // save screen dimension for the drawing methods. 
-    LY = tft.height(); //
-
+    tft.output(&Serial);                // output debug infos to serial port.  
+    while (!tft.begin(SPI_SPEED));      // init the display
+    
+    LX = tft.width();                   // save screen dimension for the drawing methods. 
+    LY = tft.height();                  //
+    
     tft.setRotation(0);                 // start in portrait mode 240x320
-
-    tft.setFramebuffers(internal_fb);   // set 1 internal framebuffer > enable double buffering
-
+    tft.setFramebuffer(internal_fb);    // set the internal framebuffer (enables double buffering)
     tft.setDiffBuffers(&diff1, &diff2); // set 2 diff buffers -> enables diffenrential updates.
-
+        
     if (PIN_BACKLIGHT != 255)
         { // make sure backlight is on
         pinMode(PIN_BACKLIGHT, OUTPUT);
@@ -142,6 +134,7 @@ void setup()
 
     tft.setRefreshRate(40); // start with a screen refresh rate around 40hz
     tft.setVSyncSpacing(8); // and a frame rate around 40/8 = 5Hz (very slow !!!)
+
     }
 
 

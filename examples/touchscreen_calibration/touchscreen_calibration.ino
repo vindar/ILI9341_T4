@@ -53,19 +53,16 @@ void setup()
     {
     Serial.begin(9600);
     tft.output(&Serial);
-    while (!tft.begin(SPI_SPEED))
-        {
-        Serial.println("Initialization error...");
-        delay(1000);
-        }
+    while (!tft.begin(SPI_SPEED));
     }
 
 
-// array to store touchscreen calibration 
-int touch_calib[4];
+
 
 void loop() 
     {
+
+    int touch_calib[4]; // array to store calibration data.
 
     // run the touchscreen calibration routine
     tft.calibrateTouch(touch_calib);
