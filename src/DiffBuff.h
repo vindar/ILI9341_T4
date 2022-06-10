@@ -30,6 +30,7 @@
 #include <Arduino.h>
 #include <math.h>
 
+#define ILI9341_T4_ALWAYS_INLINE __attribute__((always_inline))
 
 namespace ILI9341_T4
 {
@@ -201,6 +202,12 @@ namespace ILI9341_T4
         static void rotationBox(int orientation, int xmin, int xmax, int ymin, int ymax, int & x1, int & x2, int & y1, int & y2);
 
 
+        /**
+        * Print all the statistics into a Stream object.
+        **/
+        virtual void printStats(Stream* outputStream = &Serial) const = 0;
+
+
     private:
         
         // copy and rotate a framebuffer
@@ -319,6 +326,11 @@ namespace ILI9341_T4
         * Methods used to monitor resource use and optimize the diff buffer size. 
         ************************************************************************/
 
+        /**
+        * Print all the statistics into a Stream object.
+        **/
+        virtual void printStats(Stream* outputStream = &Serial) const override;
+
 
         /**
         * Reset all statistics.
@@ -358,10 +370,6 @@ namespace ILI9341_T4
         ILI9341_T4::StatsVar statsSize() const { return _stats_size; }
 
 
-        /**
-        * Print all the statistics into a Stream object.
-        **/
-        void printStats(Stream* outputStream = &Serial) const;
 
 
 
@@ -389,7 +397,7 @@ namespace ILI9341_T4
 
 
         /** Read a value */
-        uint32_t _read_encoded(int & pos) __attribute__((always_inline))
+        uint32_t _read_encoded(int & pos) ILI9341_T4_ALWAYS_INLINE
             {
             const uint8_t b = _tab[pos++];
             switch (b & 3)
@@ -416,7 +424,7 @@ namespace ILI9341_T4
 
 
         /** Write a value. WARNING : val MUST BE STRICTLY SMALLER THAN 2^22 */
-        void _write_encoded(uint32_t val)  __attribute__((always_inline))
+        void _write_encoded(uint32_t val)  ILI9341_T4_ALWAYS_INLINE
             {
             if (val <= 127)
                 { // val is encoded with a single byte
@@ -615,6 +623,19 @@ namespace ILI9341_T4
             {
             _rawnb = 2;    
             }
+
+
+        /**
+        * Print all the statistics into a Stream object.
+        **/
+        virtual void printStats(Stream* outputStream = &Serial) const override
+            {
+            if (outputStream)
+                {
+                outputStream->printf("--- DiffBuffDummy ---\n");
+                }
+            }
+
 
     private:
 

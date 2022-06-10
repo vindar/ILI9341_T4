@@ -781,11 +781,14 @@ namespace ILI9341_T4
 
         void DiffBuff::printStats(Stream* outputStream) const
             {
-            outputStream->printf("------------------- DiffBuff Stats -------------------\n");
-            outputStream->printf("- max. buffer size   : %u\n", _sizebuf + PADDING);
-            outputStream->printf("- overflow ratio     : %.1f%%  (%u out of %u computed)\n", 100 * statsOverflowRatio(), statsNbOverflow(), statsNbComputed());
-            outputStream->printf("- buffer size used   : "); _stats_size.print("", "\n", outputStream);
-            outputStream->printf("- computation time   : "); _stats_time.print("us", "\n\n", outputStream);
+            if (outputStream)
+                {
+                outputStream->printf("------------------- DiffBuff Stats -------------------\n");
+                outputStream->printf("- max. buffer size   : %u\n", _sizebuf + PADDING);
+                outputStream->printf("- overflow ratio     : %.1f%%  (%u out of %u computed)\n", 100 * statsOverflowRatio(), statsNbOverflow(), statsNbComputed());
+                outputStream->printf("- buffer size used   : "); _stats_size.print("", "\n", outputStream);
+                outputStream->printf("- computation time   : "); _stats_time.print("us", "\n\n", outputStream);
+                }
             }
 
 
