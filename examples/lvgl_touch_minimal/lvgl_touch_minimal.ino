@@ -21,24 +21,23 @@
 *   - 25KB for LVGL draw buffer
 *   - 16KB for 2 diffs buffer with 8Kb each. 
 *    
-* -----------------------------------
+ -----------------------------------
 * BUILDING THE EXAMPLE (FOR ARDUINO)
 * -----------------------------------
-* 
-* (1) Install the 'lvgl' libraries in Arduino's library folder. 
-*     You can install it directly from Arduino's IDE or simply copy 
-*     the github repo: https://github.com/lvgl/lvgl/ to Arduino's
-*     librarie folder (tested here with LVGL v8.2). 
 *
-* (2) Copy and rename the file 'libraries/lvgl/lv_conf_template.h' to 
-*     'libraries/lv_conf.h' (i.e. put this file directly in Arduino's 
-*     libraries root folder). 
-*     
+* (1) Install the 'lvgl' libraries in Arduino's library folder.
+*     from the github repo: https://github.com/lvgl/lvgl/ directly 
+*     into Arduino's library folder (tested here with LVGL v8.2).
+*
+* (2) Copy and rename the file 'libraries/lvgl/lv_conf_template.h' to
+*     'libraries/lv_conf.h' (i.e. put this file directly in Arduino's
+*     libraries root folder).
+*
 * (3) Edit the file 'lv_conf.h' such that:
-* 
+*
 *     -> Replace '#if 0' by '#if 1'               (at the begining of the file)
 *     -> set #define LV_COLOR_DEPTH 16            (should be already set to the correct value)
-*     -> set #define LV_DISP_DEF_REFR_PERIOD 15   (change this from 30ms to 15ms for more reactive display)
+*     -> set #define LV_TICK_CUSTOM 1
 *     -> set #define LV_USE_PERF_MONITOR 1        (if you want to to show the FPS counter)
 *     -> set #define LV_FONT_MONTSERRAT_12  1     (should be already set to the correct value)
 *     -> set #define LV_FONT_MONTSERRAT_14  1
@@ -80,8 +79,8 @@
 
 // XPT2046 TOUSCHSCREEN CONNECTED ON THE SAME SPI PORT AS ILI9341:
 // 
-// - connect T_DIN to the same pin as PIN_MOSI
-// - connect T_DO to the same pin as PIN_MISO
+// -> connect T_DIN to the same Teensy pin as PIN_MOSI
+// -> connect T_DO to the same Teensy pin as PIN_MISO
 // 
 #define PIN_TOUCH_CS  4     // mandatory for this example, can be any pin
 #define PIN_TOUCH_IRQ 3     // (optional) can be any digital pin with interrupt capabilities
@@ -115,7 +114,7 @@ lv_color_t lvgl_buf[LX*BUF_LY]; // memory for lvgl draw buffer (25KB)
 lv_disp_draw_buf_t draw_buf;    // lvgl 'draw buffer' object
 lv_disp_drv_t disp_drv;         // lvgl 'display driver'
 lv_indev_drv_t indev_drv;       // lvgl 'input device driver'
-
+lv_disp_t* disp;                // pointer to lvgl display object
 
 
 /** Callback to draw on the screen */
@@ -142,15 +141,6 @@ void my_touchpad_read(lv_indev_drv_t* indev_driver, lv_indev_data_t* data)
         data->point.x = touchX;
         data->point.y = touchY;
         } 
-    }
-
-
-IntervalTimer guiTimer;
-
-// callback to update lvgl's tick every ms. 
-void guiInc() 
-    {
-    lv_tick_inc(1);
     }
 
 
@@ -191,16 +181,14 @@ void setup()
     disp_drv.ver_res = LY;
     disp_drv.flush_cb = my_disp_flush;
     disp_drv.draw_buf = &draw_buf;
-    lv_disp_drv_register(&disp_drv);
+    disp = lv_disp_drv_register(&disp_drv);
+    disp->refr_timer->period = 15; // set refresh rate around 66FPS.  
 
     // Initialize lvgl input device driver (the touch screen)
     lv_indev_drv_init(&indev_drv);
     indev_drv.type = LV_INDEV_TYPE_POINTER;
     indev_drv.read_cb = my_touchpad_read;
     lv_indev_drv_register(&indev_drv);
-
-    // set the interval timer that given lvgl ticks. 
-    guiTimer.begin(guiInc, 1000);
 
 
     // ------------------------------
@@ -241,9 +229,7 @@ void ta_event_cb(lv_event_t* e)
 void loop() 
     {
     lv_task_handler(); // lvgl gui handler
-    delay(5); // plenty of time left to do other stuff... 
     }
 
 
 /** end of file */
-

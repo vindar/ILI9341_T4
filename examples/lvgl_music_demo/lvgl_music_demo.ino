@@ -2,41 +2,40 @@
 *
 * ILI9341_T4 library example. Interfacing with the LVGL library
 *
-* 
+*
 * music player demo from lvgl adapted to Teensy 4 with ILI9341_T4.
-* 
-* 
-* This example demonstrates how to use the ILI9341_T4 driver with the 
-* LVGL library. Here, allocate an internal framebuffer of size 320x240 
-* for the ILI9341_T4 driver but only a small 320x40 buffer for LVGL 
-* to draw onto. Then we use the updateRegion() method from the library 
+*
+*
+* This example demonstrates how to use the ILI9341_T4 driver with the
+* LVGL library. Here, allocate an internal framebuffer of size 320x240
+* for the ILI9341_T4 driver but only a small 320x40 buffer for LVGL
+* to draw onto. Then we use the updateRegion() method from the library
 * to update the internal framebuffer and sync with the screen using
-* differential updates for maximum performance. 
+* differential updates for maximum performance.
 *
 * The total memory consumption for the 'graphic part' is 191KB:
 *
-*   - 150KB for the internal framebuffer 
+*   - 150KB for the internal framebuffer
 *   - 25KB for LVGL draw buffer
-*   - 16KB for 2 diffs buffer with 8Kb each. 
-*    
+*   - 16KB for 2 diffs buffer with 8Kb each.
+* 
 * -----------------------------------
 * BUILDING THE EXAMPLE (FOR ARDUINO)
 * -----------------------------------
-* 
-* (1) Install the 'lvgl' libraries in Arduino's library folder. 
-*     You can install it directly from Arduino's IDE or simply copy 
-*     the github repo: https://github.com/lvgl/lvgl/ to Arduino's
-*     librarie folder (tested here with LVGL v8.2). 
 *
-* (2) Copy and rename the file 'libraries/lvgl/lv_conf_template.h' to 
-*     'libraries/lv_conf.h' (i.e. put this file directly in Arduino's 
-*     libraries root folder). 
-*     
+* (1) Install the 'lvgl' libraries in Arduino's library folder.
+*     from the github repo: https://github.com/lvgl/lvgl/ directly 
+*     into Arduino's library folder (tested here with LVGL v8.2).
+*
+* (2) Copy and rename the file 'libraries/lvgl/lv_conf_template.h' to
+*     'libraries/lv_conf.h' (i.e. put this file directly in Arduino's
+*     libraries root folder).
+*
 * (3) Edit the file 'lv_conf.h' such that:
-* 
+*
 *     -> Replace '#if 0' by '#if 1'               (at the begining of the file)
 *     -> set #define LV_COLOR_DEPTH 16            (should be already set to the correct value)
-*     -> set #define LV_DISP_DEF_REFR_PERIOD 15   (change this from 30ms to 15ms for more reactive display)
+*     -> set #define LV_TICK_CUSTOM 1
 *     -> set #define LV_USE_PERF_MONITOR 1        (if you want to to show the FPS counter)
 *     -> set #define LV_FONT_MONTSERRAT_12  1     (should be already set to the correct value)
 *     -> set #define LV_FONT_MONTSERRAT_14  1
@@ -45,16 +44,16 @@
 ********************************************************************/
 
 
-#include <ILI9341_T4.h>
+#include <ILI9341_T4.h> // the screen driver library
 
 #include <lvgl.h> // see the comment above for infos about installing and configuring LVGL. 
 
 #include "src/music/lv_demo_music.h" // the src/music/ folder contain the source code for LVGL music demo. 
 
+
 //
 // DEFAULT WIRING USING SPI 0 ON TEENSY 4/4.1
 //
-// 
 #define PIN_SCK     13      // mandatory
 #define PIN_MISO    12      // mandatory
 #define PIN_MOSI    11      // mandatory
@@ -82,7 +81,6 @@
 //#define PIN_TOUCH_CS  255   // optional, set this only if the touchscreen is connected on the same spi bus
 
 
-
 // 40MHz SPI. Can do much better with short wires
 #define SPI_SPEED       40000000
 
@@ -105,11 +103,13 @@ ILI9341_T4::ILI9341Driver tft(PIN_CS, PIN_DC, PIN_SCK, PIN_MOSI, PIN_MISO, PIN_R
 // number of lines in lvgl's internal draw buffer 
 #define BUF_LY 40
 
-lv_color_t lvgl_buf[LX*BUF_LY]; // memory for lvgl draw buffer (25KB) 
+DMAMEM lv_color_t lvgl_buf[LX * BUF_LY]; // memory for lvgl draw buffer, also in DMAMEM (25KB) 
+
 
 lv_disp_draw_buf_t draw_buf;    // lvgl 'draw buffer' object
 lv_disp_drv_t disp_drv;         // lvgl 'display driver'
 lv_indev_drv_t indev_drv;       // lvgl 'input device driver'
+lv_disp_t* disp;                // pointer to lvgl display object
 
 
 
@@ -122,18 +122,7 @@ void my_disp_flush(lv_disp_drv_t* disp, const lv_area_t* area, lv_color_t* color
     }
 
 
- 
-IntervalTimer guiTimer;
-
-// callback to update lvgl's tick every ms. 
-void guiInc() 
-    {
-    lv_tick_inc(1);
-    }
-
-
-
-void setup() 
+void setup()
     {
     Serial.begin(9600);
 
@@ -165,10 +154,8 @@ void setup()
     disp_drv.ver_res = LY;
     disp_drv.flush_cb = my_disp_flush;
     disp_drv.draw_buf = &draw_buf;
-    lv_disp_drv_register(&disp_drv);
-
-    // set the interval timer that given lvgl ticks. 
-    guiTimer.begin(guiInc, 1000);
+    disp = lv_disp_drv_register(&disp_drv);
+    disp->refr_timer->period = 15; // set refresh rate around 66FPS.  
 
 
     // ------------------------------
@@ -179,26 +166,11 @@ void setup()
 
 
 
-
-elapsedMillis em = 0; 
-
-void loop() 
+void loop()
     {
-    lv_task_handler(); // lvgl gui handler
 
-    delay(5); // plenty of time left to do other stuff... 
-    
-    // print driver infos every 5 seconds 
-    if (em > 5000)
-        {
-        em = 0;
-        // NOTE: the framerate stats are wrong because lvgl uses partial 
-        // redraw with tft.updateRegion() and also does not redraw
-        // the screen when nothing changes. Thus the actual framerate 
-        // (displayed by lvgl) is the correct one (and much better :-))
-        // The other statistics are corect.
-        tft.printStats();
-        }
+    lv_task_handler(); // lvgl gui handler    
+
     }
 
 
