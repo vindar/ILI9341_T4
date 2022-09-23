@@ -2,6 +2,7 @@
 *
 * ILI9341_T4 library example: Conway's game of life
 *
+* Thanks to Malt Whiskey for the improvements !
 ********************************************************************/
 
 #include <Arduino.h>
@@ -138,20 +139,49 @@ inline int nb_neighbours(int x, int y, uint8_t* world)
     }
 
 
-// compute the world at the next generation. 
-void compute(uint8_t* cur_world, uint8_t* new_world)
-    {
-    for (int j = 1; j < WORLD_LY - 1; j++)
+
+const int HASH_LIST_SIZE = 128;             // max number of previous hash to store
+static uint32_t hash_list[HASH_LIST_SIZE];  // array of previou hashes
+int hash_nr = 0;                            // number of hashed currently stored
+
+// check if the current hash appears multiple times among the
+// previous ones. If so we have reached a periodic config so 
+// and recreate a anew world. 
+void check_world(uint32_t hash) 
+    {     
+    uint16_t matches = 0;
+    for (uint16_t i = 0; i < hash_nr; i++)
         {
-        for (int i = 1; i < WORLD_LX - 1; i++)
-            {
-            const int ind = i + (WORLD_LX * j);
-            const int nbn = nb_neighbours(i, j, cur_world);
-            if (nbn == 3) new_world[ind] = 1;
-            else if ((nbn < 2) || (nbn > 3)) new_world[ind] = 0;
-            else new_world[ind] = cur_world[ind];
-            }
+        if (hash_list[i] == hash) matches++;
         }
+    if (matches >= 2) 
+        {
+        hash_nr = 0;
+        random_world(oldworld, random(1,1024) / 1024.0f);
+        return;
+        } 
+    if (hash_nr == HASH_LIST_SIZE) hash_nr = 0; 
+    hash_list[hash_nr++] = hash;
+    }
+
+
+// compute the world at the next generation.
+uint32_t compute(uint8_t* cur_world, uint8_t* new_world) 
+    {
+    uint32_t hash = 0;
+    for (int j = 1; j < WORLD_LY - 1; j++) 
+        {
+        for (int i = 1; i < WORLD_LX - 1; i++) 
+        {
+        const int ind = i + (WORLD_LX * j);
+        const int nbn = nb_neighbours(i, j, cur_world);
+        hash += nbn * (j * 3 + i * 5);
+        if (nbn == 3) new_world[ind] = 1;
+        else if ((nbn < 2) || (nbn > 3)) new_world[ind] = 0;
+        else  new_world[ind] = cur_world[ind];
+        }
+        }
+    return hash;
     }
 
 
@@ -182,7 +212,8 @@ int nbf = 0; // count the number of frames drawn.
 
 void loop()
     {
-    compute(curworld, oldworld);        // compute the next geenration
+    uint32_t hash = compute(curworld, oldworld); // compute the next generation
+    check_world(hash);                  // check if we should recreate a new world
     swap_worlds();                      //swap between old and new worlds
     draw_world(curworld, WHITE, BLACK); // draw onto the framebuffer
     
@@ -199,3 +230,4 @@ void loop()
 
 
 /** end of file */
+

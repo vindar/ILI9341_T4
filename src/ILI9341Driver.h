@@ -76,7 +76,7 @@ namespace ILI9341_T4
 #define ILI9341_T4_NB_PIXELS (ILI9341_T4_TFTWIDTH * ILI9341_T4_TFTHEIGHT)   // total number of pixels
 
 #define ILI9341_T4_MAX_VSYNC_SPACING 5              // maximum number of screen refresh between frames (for sync clock stability). 
-#define ILI9341_T4_IRQ_PRIORITY 128                 // priority at which we run the irqs (dma, pit timer and spi interrupts).
+#define ILI9341_T4_DEFAULT_IRQ_PRIORITY 128                 // default priority at which we run all irqs (dma, pit timer and spi interrupts).
 #define ILI9341_T4_MAX_DELAY_MICROSECONDS 1000000   // maximum waiting time (1 second)
 
 #define ILI9341_T4_TOUCH_Z_THRESHOLD     400        // for touch
@@ -328,7 +328,6 @@ public:
     void setSpiClockRead(int spi_clock = ILI9341_T4_DEFAULT_SPICLOCK_READ);
     
 
-
     /**
     * Query the spi speed for SPI reads.
     **/
@@ -336,6 +335,32 @@ public:
 
 
 
+    /**
+    * Set the priority at which all the driver interrupts run (dma, pit-timer and SPI). 
+    *
+    * ADVANCED METHOD: do not change the default value unless you know what you are doing. 
+    * The default value should be good for most use case...
+    *
+    * - the default value is ILI9341_T4_DEFAULT_IRQ_PRIORITY = 128.
+    *
+    * - Setting a smaller value (eg 64 or 32) increases the priority hence it will make 
+    *   the framerate more stable by prioritizing the screen driver interrupts over 
+    *   other ones (but, although unlikely, this could slow down/interfere with other operations).    
+    *
+    * - Setting a larger value (eg 192) will insure that the driver does not interrupt/interfere
+    *   with other operations with higher priorities but the framerate may oscillate a little more
+    *   if servicing the other interrupts takes a long time.
+    **/
+    void setIRQPriority(int irq_priority = ILI9341_T4_DEFAULT_IRQ_PRIORITY);
+
+
+    /**
+    * Return the priority at which the driver's interrupt are currently running.
+    **/
+    int getIRQPriority() const { return _irq_priority; }
+   
+   
+      
     /***************************************************************************************************
     ****************************************************************************************************
     *
@@ -1293,7 +1318,8 @@ private:
     int     _rotation;                          // current screen orientation
     int     _refreshmode;                       // refresh mode (between 0 = fastest refresh rate and 15 = slowest refresh rate). 
     
-    mutable Stream * _outputStream;                      // output stream used for debugging
+    int     _irq_priority;                      // priority at which we run all IRQ's (dma, pit timer and spi interrupts)
+    mutable Stream * _outputStream;             // output stream used for debugging
 
     /** helper methods for writing to _outputStream (without using variadic parameters...) */
     template<typename T> void _print(const T & v) const { if (_outputStream) _outputStream->print(v); }
@@ -1480,12 +1506,14 @@ private:
     // called when doing partial diff redraw
     void _spiInterrupt_software() ILI9341_T4_ALWAYS_INLINE
         {
-        //noInterrupts();        // UNNEEDED ?
         _toggle(_dcport, _dcpinmask);
+        _pimxrt_spi->SR = 0x3f00; //Reset All flags and errors    
         if (_spi_int_phase >= 0)
             {            
+            noInterrupts(); // needed !  
             _pimxrt_spi->TDR = _spi_int_command[_spi_int_phase];
             _pimxrt_spi->TCR = (_spi_int_phase & 1) ? (_dma_spi_tcr_assert) : (_dma_spi_tcr_deassert);
+            interrupts();  
             _spi_int_phase--;
             }
         else
@@ -1493,9 +1521,7 @@ private:
             _pimxrt_spi->IER = 0; // disable interrupt            
             _dmatx.enable();
             }
-        _pimxrt_spi->SR = 0x3f00; //Reset All flags and errors    
         asm("dsb");
-        //interrupts();        // UNNEEDED ?
         }
 
 
@@ -1688,7 +1714,7 @@ private:
         _it.end(); // stop ongoing timer before changing callback method. 
         _pitcb = timercb;
         if ((us <= 3) || (us > ILI9341_T4_MAX_DELAY_MICROSECONDS)) { us = 3; } // asap
-        _it.priority(ILI9341_T4_IRQ_PRIORITY);
+        _it.priority(_irq_priority);
         _istimer = true;
         switch (_pitindex)
             {

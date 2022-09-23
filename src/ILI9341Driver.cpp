@@ -43,6 +43,7 @@ namespace ILI9341_T4
         _height = ILI9341_T4_TFTHEIGHT;
         _rotation = 0;
         _refreshmode = 0; 
+        _irq_priority = ILI9341_T4_DEFAULT_IRQ_PRIORITY;
         _outputStream = nullptr;
 
         // buffering
@@ -82,6 +83,7 @@ namespace ILI9341_T4
         _rst = rst;
         _touch_cs = touch_cs;
         _touch_irq = touch_irq;
+        _spi_num = 255;
         _cspinmask = 0;
         _csport = NULL;
         _hardware_dc = false;
@@ -256,21 +258,16 @@ namespace ILI9341_T4
             {
             case 0:
                 attachInterruptVector(IRQ_LPSPI4, (_hardware_dc) ? _spiInterruptSPI0_hardware : _spiInterruptSPI0_software);
-                NVIC_SET_PRIORITY(IRQ_LPSPI4, ILI9341_T4_IRQ_PRIORITY);
-                NVIC_ENABLE_IRQ(IRQ_LPSPI4);
                 break;
             case 1:
                 attachInterruptVector(IRQ_LPSPI3, (_hardware_dc) ? _spiInterruptSPI1_hardware : _spiInterruptSPI1_software);
-                NVIC_SET_PRIORITY(IRQ_LPSPI3, ILI9341_T4_IRQ_PRIORITY);
-                NVIC_ENABLE_IRQ(IRQ_LPSPI3);
                 break;
             case 2:
                 attachInterruptVector(IRQ_LPSPI1, (_hardware_dc) ? _spiInterruptSPI2_hardware : _spiInterruptSPI2_software);
-                NVIC_SET_PRIORITY(IRQ_LPSPI1, ILI9341_T4_IRQ_PRIORITY);
-                NVIC_ENABLE_IRQ(IRQ_LPSPI1);
                 break;
             }
 
+        setIRQPriority(_irq_priority); // set SPI interrupt priority
 
         _maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(7)); // drive DC high now. 
 
@@ -291,7 +288,7 @@ namespace ILI9341_T4
         if (_spi_clock_read < 0) _spi_clock_read = ILI9341_T4_DEFAULT_SPICLOCK_READ;
         _printf("\n- SPI write speed : %.2fMhz\n", spi_clock / 1000000.0f);
         _printf("- SPI read speed : %.2fMhz\n\n", spi_clock_read / 1000000.0f);
-
+        _printf("- IRQ priority : %d\n\n", _irq_priority);
 
         _rotation = 0; // default rotation
 
@@ -446,6 +443,29 @@ namespace ILI9341_T4
         resync();
         }
 
+
+    FLASHMEM void ILI9341Driver::setIRQPriority(int irq_priority)
+        {
+        _waitUpdateAsyncComplete();            
+        noInterrupts();
+        _irq_priority = _clip(irq_priority, 0, 255);        
+        switch (_spi_num)
+            {
+            case 0:
+                NVIC_SET_PRIORITY(IRQ_LPSPI4, _irq_priority);
+                NVIC_ENABLE_IRQ(IRQ_LPSPI4);
+                break;
+            case 1:
+                NVIC_SET_PRIORITY(IRQ_LPSPI3, _irq_priority);
+                NVIC_ENABLE_IRQ(IRQ_LPSPI3);
+                break;
+            case 2:
+                NVIC_SET_PRIORITY(IRQ_LPSPI1, _irq_priority);
+                NVIC_ENABLE_IRQ(IRQ_LPSPI1);
+                break;
+            }        
+        interrupts();
+        }
 
 
     /**********************************************************************************************************
@@ -1431,10 +1451,10 @@ namespace ILI9341_T4
         _dma_deassert_dc();
 
         noInterrupts();
-        NVIC_SET_PRIORITY(IRQ_DMA_CH0 + _dmatx.channel, ILI9341_T4_IRQ_PRIORITY);
+        NVIC_SET_PRIORITY(IRQ_DMA_CH0 + _dmatx.channel, _irq_priority);
         _dmatx.begin(false);        
         _dmatx.enable(); // go !
-        NVIC_SET_PRIORITY(IRQ_DMA_CH0 + _dmatx.channel, ILI9341_T4_IRQ_PRIORITY);
+        NVIC_SET_PRIORITY(IRQ_DMA_CH0 + _dmatx.channel, _irq_priority);
         interrupts();
         _pauseCpuTime();
         }
@@ -1564,11 +1584,11 @@ namespace ILI9341_T4
             _pimxrt_spi->SR = 0x3f00;
 
             // interrupt after each frame
+            noInterrupts();
             _pimxrt_spi->IER = LPSPI_IER_WCIE;  
-
             _pimxrt_spi->TDR = _spi_int_command[_spi_int_phase--]; // send the first command
             _pimxrt_spi->TCR = _dma_spi_tcr_deassert; // and then back to frame(15)
-
+            interrupts();
             // now we wait for the interrupt before toogling DC and sending the next frame... 
             }
         return;
@@ -2203,6 +2223,7 @@ namespace ILI9341_T4
             _print("----------------- ILI9341Driver Stats ----------------\n");
             _print("[Configuration]\n");
             _printf("- SPI speed          : write=%u  read=%u\n", _spi_clock, _spi_clock_read);
+            _printf("- IRQ priority       : %d\n", _irq_priority);
             _print("- screen orientation : ");
             switch (getRotation())
                 {
