@@ -27,7 +27,7 @@
 *
 * (1) Install the 'lvgl' libraries in Arduino's library folder.
 *     from the github repo: https://github.com/lvgl/lvgl/ directly 
-*     into Arduino's library folder (tested here with LVGL v8.2).
+*     into Arduino's library folder (tested here with LVGL v9.0.0).
 *
 * (2) Copy and rename the file 'libraries/lvgl/lv_conf_template.h' to
 *     'libraries/lv_conf.h' (i.e. put this file directly in Arduino's
