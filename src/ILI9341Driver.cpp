@@ -2036,7 +2036,7 @@ namespace ILI9341_T4
         if (xmin < 0) xmin = 0; 
         if (xmax >= lx) xmax = lx - 1;
         if (ymin < 0) ymin = 0;
-        if (ymax >= lx) ymax = ly - 1;
+        if (ymax >= ly) ymax = ly - 1;
 
         const uint32_t a = (opacity >= 1.0f) ? 32 : (32 * opacity);
         for (int j = ymin; j <= ymax; j++)
