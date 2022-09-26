@@ -1861,19 +1861,17 @@ namespace ILI9341_T4
         off += 3;
         const int sx = (int)_fetchbits_unsigned(data, off, font.bits_width);
         off += font.bits_width;
-        const int sy = (int)_fetchbits_unsigned(data, off, font.bits_height);
+        //const int sy = (int) _fetchbits_unsigned(data, off, font.bits_height);
         off += font.bits_height;
         const int xoffset = (int)_fetchbits_signed(data, off, font.bits_xoffset);
         off += font.bits_xoffset;
-        const int yoffset = (int)_fetchbits_signed(data, off, font.bits_yoffset);
+        //const int yoffset = (int)_fetchbits_signed(data, off, font.bits_yoffset);
         off += font.bits_yoffset;
         xadvance = (int)_fetchbits_unsigned(data, off, font.bits_delta);
-        const int x = pos_x + xoffset;
-        const int y = pos_y - sy - yoffset;
-        min_x = x;
-        max_x = x + sx - 1;
-        min_y = y;
-        max_y = y + sy - 1;
+        min_x = pos_x - 1;
+        max_x = pos_x + xoffset + sx;
+        min_y = pos_y - font.cap_height - 2;
+        max_y = min_y + font.line_space - 1; 
         }
 
 
@@ -1896,12 +1894,12 @@ namespace ILI9341_T4
             else
                 {
                 int xa = 0;
-                int mx = min_x; 
+                int mx = min_x;
                 int Mx = max_x;
                 int my = min_y;
                 int My = max_y;
                 _measureChar(c, pos_x, pos_y, mx, Mx, my, My, pfont, xa);
-                if (mx < min_x) min_x = mx; 
+                if (mx < min_x) min_x = mx;
                 if (my < min_y) min_y = my;
                 if (Mx > max_x) max_x = Mx;
                 if (My > max_y) max_y = My;
@@ -1911,10 +1909,10 @@ namespace ILI9341_T4
         }
 
 
-
     FLASHMEM void ILI9341Driver::_drawTextILI(const char* text, int pos_x , int  pos_y, uint16_t col, const void * pfont, bool start_newline_at_0, int lx, int ly, int stride, uint16_t* buffer, float opacity)
         {
-        if (opacity > 1.0f) opacity = 1.0f;
+        if (opacity <= 0.0f) return; 
+        if (opacity >= 1.0f) opacity = 1.0f;
         const int startx = start_newline_at_0 ? 0 : pos_x;
         const size_t l = strlen(text);
         for (size_t i = 0; i < l; i++)
@@ -2033,6 +2031,7 @@ namespace ILI9341_T4
 
     FLASHMEM void ILI9341Driver::_fillRect(int xmin, int xmax, int ymin, int ymax, int lx, int ly, int stride, uint16_t* buffer, uint16_t color, float opacity)
         {
+        if (opacity <= 0.0f) return;
         if (xmin < 0) xmin = 0; 
         if (xmax >= lx) xmax = lx - 1;
         if (ymin < 0) ymin = 0;
@@ -2108,13 +2107,78 @@ namespace ILI9341_T4
 
 
 
+    FLASHMEM void ILI9341Driver::overlayText(uint16_t* fb, const char* text, int position, int line, int font_size,
+                                             uint16_t fg_color, float fg_opacity,
+                                             uint16_t bg_color, float bg_opacity,
+                                             bool extend_bk_whole_width)
+        {
+
+        const ILI9341_t3_font_t * pfont;
+        if (font_size < 12)
+            pfont = &font_ILI9341_T4_OpenSans_Bold_10;
+        else if (font_size < 14)
+            pfont = &font_ILI9341_T4_OpenSans_Bold_12;
+        else if (font_size < 16)
+            pfont = &font_ILI9341_T4_OpenSans_Bold_14;
+        else 
+            pfont = &font_ILI9341_T4_OpenSans_Bold_16;
+
+        int x = 0;
+        int y = 0;
+        int tt_xmin, tt_xmax, tt_ymin, tt_ymax;
+        _measureText(text, x, y, tt_xmin, tt_xmax, tt_ymin, tt_ymax, pfont, false);
+
+        int dx, dy;
+        switch (position)
+            {
+            case 1: 
+                {
+                dx = _width - 1 - tt_xmax;
+                dy = _height - 1 - tt_ymax - line * pfont->line_space;
+                break;
+                }
+            case 2:
+                {
+                dx = -tt_xmin;
+                dy = _height - 1 - tt_ymax - line * pfont->line_space;
+                break;
+                }
+            case 3:
+                {
+                dx = -tt_xmin;
+                dy = -tt_ymin + line * pfont->line_space;
+                break;
+                }
+            default:
+                {
+                dx = _width - 1 - tt_xmax;
+                dy = -tt_ymin + line* pfont->line_space;
+                break;
+                }
+            }
+
+        x += dx;
+        y += dy;
+
+        tt_xmin += dx;
+        tt_xmax += dx;
+        tt_ymin += dy;
+        tt_ymax += dy;
+
+        if (extend_bk_whole_width)
+            { // overwrite
+            tt_xmin = 0; 
+            tt_xmax = _width - 1;
+            }
+
+        _fillRect(tt_xmin, tt_xmax, tt_ymin, tt_ymax, _width, _height, _width, fb, bg_color, bg_opacity);
+        _drawTextILI(text, x, y, fg_color, pfont, false, _width, _height, _width, fb, fg_opacity);
+        }
 
 
 
 
-
-
-    FLASHMEM void ILI9341Driver::overlayFPS(uint16_t* fb, int position, uint16_t fg_color, uint16_t bk_color, float opacity)
+    FLASHMEM void ILI9341Driver::overlayFPS(uint16_t* fb, int position, uint16_t fg_color, uint16_t bg_color, float opacity)
         {
         char text[8] = "--- FPS";
         int text_off = 0;
@@ -2137,54 +2201,7 @@ namespace ILI9341_T4
                 text[text_off] = '0' + (fps % 10);
                 }
             }
-
-        int x = 0;
-        int y = 0;
-        int _fps_xmin, _fps_xmax, _fps_ymin, _fps_ymax;
-        _measureText(text + text_off, x, y, _fps_xmin, _fps_xmax, _fps_ymin, _fps_ymax, &font_ILI9341_T4_OpenSans_Bold_10, false);
-        _fps_xmin -= 2;
-        _fps_xmax += 2;
-        _fps_ymin -= 3;
-        _fps_ymax += 2;
-
-        int dx, dy;
-        switch (position)
-            {
-            case 1: 
-                {
-                dx = _width - 1 - _fps_xmax;
-                dy = _height - 1 - _fps_ymax;
-                break;
-                }
-            case 2:
-                {
-                dx = -_fps_xmin;
-                dy = _height - 1 - _fps_ymax;
-                break;
-                }
-            case 3:
-                {
-                dx = -_fps_xmin;
-                dy = -_fps_ymin;
-                break;
-                }
-            default:
-                {
-                dx = _width - 1 - _fps_xmax;
-                dy = -_fps_ymin;
-                break;
-                }
-            }
-
-        x += dx;
-        _fps_xmin += dx;
-        _fps_xmax += dx;
-        y += dy;
-        _fps_ymin += dy;
-        _fps_ymax += dy;
-
-        _fillRect(_fps_xmin, _fps_xmax, _fps_ymin, _fps_ymax, _width, _height, _width, fb, bk_color, opacity);
-        _drawTextILI(text + text_off, x, y, fg_color, &font_ILI9341_T4_OpenSans_Bold_10, false, _width, _height, _width, fb, opacity + 0.3f);
+        overlayText(fb, text + text_off, position, 0, 10, fg_color, opacity + 0.3f, bg_color, opacity, false);  
         }
 
 

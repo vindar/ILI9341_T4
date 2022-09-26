@@ -55,6 +55,26 @@
 namespace ILI9341_T4
 {
 
+    /** a few colors */
+
+#define ILI9341_T4_COLOR_BLACK 0x0
+#define ILI9341_T4_COLOR_WHITE 0xffff
+#define ILI9341_T4_COLOR_RED 0xf800
+#define ILI9341_T4_COLOR_BLUE 0x1f
+#define ILI9341_T4_COLOR_GREEN 0x7e0
+#define ILI9341_T4_COLOR_PURPLE 0x8010
+#define ILI9341_T4_COLOR_ORANGE 0xfc20
+#define ILI9341_T4_COLOR_CYAN 0x7ff
+#define ILI9341_T4_COLOR_LIME 0x7e0
+#define ILI9341_T4_COLOR_SALMON 0xfc0e
+#define ILI9341_T4_COLOR_MAROON 0x8000
+#define ILI9341_T4_COLOR_YELLOW 0xffe0
+#define ILI9341_T4_COLOR_MAJENTA 0xf81f
+#define ILI9341_T4_COLOR_OLIVE 0x8400
+#define ILI9341_T4_COLOR_TEAL 0x410
+#define ILI9341_T4_COLOR_GRAY 0x8410
+#define ILI9341_T4_COLOR_SILVER 0xc618
+#define ILI9341_T4_COLOR_NAVY 0x10
 
 
     /** Configuration */
@@ -85,10 +105,10 @@ namespace ILI9341_T4
 
 #define ILI9341_T4_SELFDIAG_OK 0xC0                 // value returned by selfDiagStatus() if everything is OK.
 
-#define ILI9441_T4_DEFAULT_FPS_COUNTER_COLOR_FG 0xFFFF  // default values (color/opacity/position)
-#define ILI9441_T4_DEFAULT_FPS_COUNTER_COLOR_BG 0x001F  // for the FPS counter
-#define ILI9441_T4_DEFAULT_FPS_COUNTER_OPACITY 0.5f     // 
-#define ILI9441_T4_DEFAULT_FPS_COUNTER_POSITION 0xFFFF  //
+#define ILI9441_T4_DEFAULT_FPS_COUNTER_COLOR_FG ILI9341_T4_COLOR_WHITE  // default values (color/opacity/position)
+#define ILI9441_T4_DEFAULT_FPS_COUNTER_COLOR_BG ILI9341_T4_COLOR_BLUE   // for the FPS counter
+#define ILI9441_T4_DEFAULT_FPS_COUNTER_OPACITY 0.5f                     // 
+#define ILI9441_T4_DEFAULT_FPS_COUNTER_POSITION 0                       //
 
 
 /** ILI9341 command codes */
@@ -1022,6 +1042,32 @@ public:
     ****************************************************************************************************/
 
 
+
+    /**
+     * Overlay a text on the supplied framebuffer at a given position and with 
+     * given color (for text and background). 
+     * 
+     * This method is useful for printing out simple debug information... For more advance 
+     * text formatting, use a dedicated graphic library to draw on the framebuffer such as tgx 
+     * (https://github.com/vindar/tgx)
+     *
+     * - fb : the framebuffer to draw onto
+     * - position : position of the counter on the framebuffer:
+     *              0= top right,  1=bottom right,  2=bottom left,  3=top left
+     * - line : line offset for the beginning of text w.r.t. the position     
+     * - font : size of the font to use (10, 12, 14 or 16 pt)
+     * - fg_color : text color
+     * - fg_opacity : text opacity between 0.0f (fully transparent) and 1.0f (fully opaque).
+     * - bg_color : background color
+     * - bg_opacity : background opacity between 0.0f (fully transparent) and 1.0f (fully opaque).
+     * - extend_bk_whole_width : true to extend the background rectangle to the whole width of the screen
+    **/
+    void overlayText(uint16_t* fb, const char* text, int position, int line, int font_size,
+                     uint16_t fg_color = ILI9341_T4_COLOR_WHITE, float fg_opacity = 1.0f,
+                     uint16_t bg_color = ILI9341_T4_COLOR_BLACK, float bk_opacity = 0.0f,
+                     bool extend_bg_whole_width = false);
+
+
     /**
     * Draw the FPS counter on a corner of the supplied framebuffer with given colors 
     * and opacity.
@@ -1033,7 +1079,7 @@ public:
     * 
     * - fb : the framebuffer to draw onto
     * - position: position of the counter on the framebuffer:
-    *             0= top right,  1=bottom right,  3=bottom left,  4=top left
+    *             0= top right,  1=bottom right,  2=bottom left,  3=top left
     * - fg_color : foreground color.   
     * - bg_color : background color  
     * - opacity : opacity of the counter between 0.0f=transparent and 1.0f=opaque. 
@@ -1041,7 +1087,7 @@ public:
     void overlayFPS(uint16_t* fb, 
                     int position = ILI9441_T4_DEFAULT_FPS_COUNTER_POSITION, 
                     uint16_t fg_color = ILI9441_T4_DEFAULT_FPS_COUNTER_COLOR_FG, 
-                    uint16_t bk_color = ILI9441_T4_DEFAULT_FPS_COUNTER_COLOR_BG, 
+                    uint16_t bg_color = ILI9441_T4_DEFAULT_FPS_COUNTER_COLOR_BG, 
                     float opacity = ILI9441_T4_DEFAULT_FPS_COUNTER_OPACITY);
 
 
