@@ -1,9 +1,6 @@
-- **New in v1.3**: *improved calibration routine. Updated examples (in particular for using LVGL). Removed useless triple buffering, reduced code size.*
+- **New in v1.4**: *added overlayText() method.*
+- **New in v1.3**: *improved calibration routine. Updated examples (in particular for LVGL). Removed useless triple buffering, reduced code size.*
 - **New in v1.2**: *Added an FPS counter (method `overlayFPS()`).*
-- **New in v1.1**: *Improved performance: updates consume less CPU time (around 30% less) for both hardware/software DC pins.*
-- **New in v1.0**: *The DC and CS pins can now be choosen to be any digital pin but still using a hardware chip select pin for DC will provide a subtantial speedup.*
-- **New in v1.0**: *The driver now also works with displays that do not have a CS pin.*
-
 
 # ILI9341_T4
 
@@ -268,7 +265,9 @@ Complete examples can be found in the `/examples` sub-directory of the library.
 tft.update(fb, true); // fb will be uploaded without computing the diff (but just for this upload). 
 ```
 
-- **Printing statistics**. Several methods are available to provide detailed statistics about the performance of the driver. All these methods take the form `statsXXX`. Also, there is a very convenient method for debugging/optimization call `printStats()` that will print out all the statistics of the driver onto the output stream (set with the `output()` method). One can also use the method `overlayFPS()` to draw the current instantaneous framerate onto the framebuffer before calling `update()`.
+- **Printing statistics**. Several methods are available to provide detailed statistics about the performance of the driver. All these methods take the form `statsXXX`. Also, there is a very convenient method for debugging/optimization call `printStats()` that will print out all the statistics of the driver onto the output stream (set with the `output()` method). 
+
+- **Drawing text on the framebuffer** The `overlayText()` method can be used to draw some text onto the framebuffer. This is useful for displaying basic informations or debugging. For more advance formatting, one must use a dedicated graphics library such <a href="https://github.com/vindar/tgx">tgx</a>... Similarly, the method `overlayFPS()` draws the current instantaneous framerate onto a given framebuffer. Both methods `overlayText()` and `overlayFPS()` are typically called just before calling `update()`.
 
 - **diff buffer and memory allocation**. The library performs no memory allocation. All the memory needed (framebuffer and diff buffers) are to be provided by the user which keeps complete control over memory allocation. For diff buffers, the `StaticDiffBuffer<>` template class provides a convenient way to create diff buffers with statically allocated memory. However, if more control is needed, one can use the base `DiffBuffer` class which is similar but requires the user to provide the memory space at construction time. See the file `DiffBuff.h` for additional details. 
 
