@@ -141,9 +141,6 @@ struct Ball
 
 
 
-
-
-
 // our 99 luftballons
 Ball balls[99];
 
@@ -200,7 +197,8 @@ void loop()
         b.draw(fb);
         }
 
-    tft.overlayFPS(fb, 63488, 0, 0.2f); // draw the FPS counter on the top left, in red on a semi-transparent white background
+    tft.overlayFPS(fb, 1); // draw fps counter on bottom right
+    tft.overlayText(fb, "99luftballons demo", 3, 0, 12, ILI9341_T4_COLOR_WHITE, 1.0f, ILI9341_T4_COLOR_RED, 0.4f, 1); // draw text    
     tft.update(fb); // push the framebuffer to be displayed
 
     if (++nbf % 2000 == 500)
@@ -213,4 +211,3 @@ void loop()
 
 
 /** end of file */
-

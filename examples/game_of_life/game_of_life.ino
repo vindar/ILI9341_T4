@@ -63,11 +63,6 @@ DMAMEM uint16_t internal_fb[LX * LY];   // used by the library for buffering (in
 uint16_t fb[LX * LY];                   // the main framebuffer we draw onto.
 
 
-// colors
-#define BLACK   0
-#define WHITE   0xFFFF
-
-
 // size of a cell in pixels
 #define CELL_LX 2       // possible value: 1, 2, 4, 8
 #define CELL_LY 2       // possible values: 1, 2, 4, 8
@@ -215,9 +210,10 @@ void loop()
     uint32_t hash = compute(curworld, oldworld); // compute the next generation
     check_world(hash);                  // check if we should recreate a new world
     swap_worlds();                      //swap between old and new worlds
-    draw_world(curworld, WHITE, BLACK); // draw onto the framebuffer
+    draw_world(curworld, ILI9341_T4_COLOR_GREEN, ILI9341_T4_COLOR_BLACK); // draw onto the framebuffer
     
     tft.overlayFPS(fb);                 // draw the FPS counter on the top right corner of the framebuffer
+    tft.overlayText(fb, "Game of life demo", 2, 0, 14, ILI9341_T4_COLOR_WHITE, 1.0f, ILI9341_T4_COLOR_RED, 0.3f, 1); // draw text    
     tft.update(fb);                     // push to screen (asynchronously).
 
     if (++nbf % 1000 == 500)
@@ -227,7 +223,3 @@ void loop()
         diff2.printStats(); // stats about the second diff buffer
         }
     }
-
-
-/** end of file */
-
