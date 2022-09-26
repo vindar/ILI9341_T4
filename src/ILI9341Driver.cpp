@@ -1868,8 +1868,8 @@ namespace ILI9341_T4
         //const int yoffset = (int)_fetchbits_signed(data, off, font.bits_yoffset);
         off += font.bits_yoffset;
         xadvance = (int)_fetchbits_unsigned(data, off, font.bits_delta);
-        min_x = pos_x - 1;
-        max_x = pos_x + xoffset + sx;
+        min_x = pos_x;
+        max_x = pos_x + xoffset + sx - 1;
         min_y = pos_y - font.cap_height - 2;
         max_y = min_y + font.line_space - 1; 
         }
@@ -2095,7 +2095,7 @@ namespace ILI9341_T4
         _drawCharILI(c, nx, ny, col, pfont, MAX_CHAR_SIZE_LX, MAX_CHAR_SIZE_LY, MAX_CHAR_SIZE_LX, buffer, 1.0f); // draw the char on the buffer
         _updateRectNow(buffer, pos_x, pos_x + max_x , pos_y - ny, pos_y + max_y - ny, MAX_CHAR_SIZE_LX); // upload it to the screen
 
-        pos_x += (nx + min_x);
+        pos_x += xa; //(nx + min_x);
 
         }
 
@@ -2127,6 +2127,9 @@ namespace ILI9341_T4
         int y = 0;
         int tt_xmin, tt_xmax, tt_ymin, tt_ymax;
         _measureText(text, x, y, tt_xmin, tt_xmax, tt_ymin, tt_ymax, pfont, false);
+
+        tt_xmin--;
+        tt_xmax++;
 
         int dx, dy;
         switch (position)
@@ -2652,9 +2655,9 @@ namespace ILI9341_T4
             {
             char tn[4] = { (char)('1' + i),'/', '4', 0};
             clear(WHITE);         
-            _uploadText("Touchscreen calibration", 30, 120, BLACK, WHITE, (void*)(&font_ILI9341_T4_OpenSans_Bold_16), true);
+            _uploadText("Touchscreen calibration", 28, 120, BLACK, WHITE, (void*)(&font_ILI9341_T4_OpenSans_Bold_16), true);
             _uploadText("Touch the center of the", 50, 170, BLUE, WHITE, (void*)(&font_ILI9341_T4_OpenSans_Bold_12), true);
-            _uploadText("red square in the corner", 50, 185, BLUE, WHITE, (void*)(&font_ILI9341_T4_OpenSans_Bold_12), true);
+            _uploadText("red square in the corner", 47, 185, BLUE, WHITE, (void*)(&font_ILI9341_T4_OpenSans_Bold_12), true);
             _uploadText(tn, 105, 215, 31, 0xFFFF, (void*)(&font_ILI9341_T4_OpenSans_Bold_16), true);            
             _printf("\n- corner %s: touch the center of the red rectangle... ", tn);
             switch (i)
@@ -2688,7 +2691,7 @@ namespace ILI9341_T4
         _pushRect(GREY, 99, 235, 282, 316);
         _uploadText("GOOD", 27, 305, GREEN, GREY, (void*)(&font_ILI9341_T4_OpenSans_Bold_14), true);
         _uploadText("REDO CALIB.", 130, 305, RED, GREY, (void*)(&font_ILI9341_T4_OpenSans_Bold_14), true);
-        _uploadText("Draw below to test calibration", 22, 15, BLACK, WHITE, (void*)(&font_ILI9341_T4_OpenSans_Bold_14), true);
+        _uploadText("Draw below to test calibration", 19, 15, BLACK, WHITE, (void*)(&font_ILI9341_T4_OpenSans_Bold_14), true);
 
         float xa = (x[0] + x[3]) / 2.0f;
         float xb = (x[1] + x[2]) / 2.0f;
@@ -2738,7 +2741,7 @@ namespace ILI9341_T4
 
                         int minx, maxx, miny, maxy;
                         _measureText(tt, 0, 0, minx, maxx, miny, maxy, (void*)(&font_ILI9341_T4_OpenSans_Bold_16), false);
-                        _uploadText("Calibration data:", 60, 130, BLACK, WHITE, (void*)(&font_ILI9341_T4_OpenSans_Bold_16), true);
+                        _uploadText("Calibration data:", 50, 130, BLACK, WHITE, (void*)(&font_ILI9341_T4_OpenSans_Bold_16), true);
                         _uploadText(tt, 120 - (maxx - minx + 1)/2, 170, RED, WHITE, (void*)(&font_ILI9341_T4_OpenSans_Bold_16), true);
                         _pushRect(BLACK, 85, 155, 280, 318);
                         _pushRect(GREY, 87, 153, 282, 316);
