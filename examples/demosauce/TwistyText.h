@@ -207,7 +207,7 @@ void TwistyText::perFrame(ILI9341Wrapper & tft, FrameParams frameParams ) {
 
 		// Draw a minimal number of rects. Advance from top to bottom. Track when rects start & end.
 		boolean inRect = false;
-		uint_fast8_t topBit;
+		uint_fast8_t topBit = 0;
 		for( uint_fast8_t bit=0; bit<=8; bit++ ) {
 
 			boolean isSolid = (boolean)( colByte & (0x1 << bit) );

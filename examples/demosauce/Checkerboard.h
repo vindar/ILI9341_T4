@@ -69,8 +69,8 @@ void Checkerboard::perFrame(ILI9341Wrapper & tft, FrameParams frameParams ) {
 	float ease = (1.0f-frameParams.audioMean);
 	ease *= ease;	// Stronger reactions, please
 
-	uint_fast8_t bright = (1.0f-ease) * 0xff;
-	uint_fast16_t audioColor = color565( bright, bright>>1, 0 );
+	//uint_fast8_t bright = (1.0f-ease) * 0xff;
+	//uint_fast16_t audioColor = color565( bright, bright>>1, 0 );
 
   int_fast8_t sqX = -sqLeftOfCenter;
   for( float x=startX; x<w; x+=size ) {

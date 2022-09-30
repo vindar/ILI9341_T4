@@ -691,7 +691,7 @@ namespace ILI9341_T4
                     }
                 }
             // wait to begin scanline 1. 
-            while (_getScanLine(true) == 0);  
+            while (_getScanLine(true) == 0)
                 {
                 if (em > 1000000)
                     { // hanging...
@@ -2647,9 +2647,9 @@ namespace ILI9341_T4
 
     restart_calib:
 
-        int x[4];
-        int y[4];
-        int z[4];
+        int x[4] = {0,0,0,0};
+        int y[4] = {0,0,0,0};
+        int z[4] = {0,0,0,0};
 
         for (int i = 0; i < 4; i++)
             {

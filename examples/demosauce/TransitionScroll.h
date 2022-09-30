@@ -109,11 +109,11 @@ void TransitionScroll::perFrame(ILI9341Wrapper & tft, FrameParams frameParams ) 
 			uint_fast16_t y = startY + line;
 
 
-			for (int i = 0; i < w; i++)
+			for (int i = 0; i < (int)w; i++)
 				{
 				_pixels[i] = (uint16_t)tft.readPixel(i, y);
 				}
-			for (int i = 0; i < w - staggerX; i++)
+			for (int i = 0; i < (int)(w - staggerX); i++)
 				{
 				tft.drawPixel(i + staggerX, y, ((_pixels[i])));
 				}
