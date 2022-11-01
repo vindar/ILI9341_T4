@@ -1,7 +1,3 @@
-- **New in v1.4**: *added overlayText() method.*
-- **New in v1.3**: *improved calibration routine. Updated examples (in particular for LVGL). Removed useless triple buffering, reduced code size.*
-- **New in v1.2**: *Added an FPS counter (method `overlayFPS()`).*
-
 # ILI9341_T4
 
 <p align="center">
@@ -13,36 +9,36 @@
 
 ## Optimized ILI9341 screen driver library for Teensy 4/4.1, with vsync and differential updates
 
-This library implements a SPI driver for the ILI9341 screen providing the ability to display memory framebuffers onto the screen very efficiently. 
-In particular, the following advanced features are available:
+This library implements a SPI driver for the ILI9341 screen controller providing the ability to display memory framebuffers onto the screen very efficiently. 
+The following advanced features are available:
 
 - **Differential redraws.** The driver compares the framebuffer to be uploaded with the previous one and uploads only the pixels that differ. It does so in a smart way to minimize spi transaction / RAMWR commands. Uploading only parts of the screen makes it possible to achieve extremely high frame rates when moderate changes occur between frames (hundreds of FPS for simple cases like UIs). 
 
-- **Asynchronous updates via DMA.** Upload can be performed directly or asynchronously using DMA (even in the case of complicated diff updates) which means that the MCU is free to do other tasks - like generating the next frame - during updates.
+- **Asynchronous updates via DMA.** Upload can be performed directly or asynchronously using DMA so the MCU is free to do other tasks - like generating the next frame - during updates.
 
 - **adjustable framerate.** The screen refresh rate can be adjusted between 40hz and 130Hz and a framerate can be set within the driver. Uploads are timed to meet the requested framerate.
 
-- **vsync and screen tearing prevention.** This is the best part :-) The driver monitors the position of the current scanline being refreshed on the screen and orders the pixel updates so that they trail behind this scanline. This makes it possible to completely suppress screen tearing provided the update can be done in less than two refresh periods. In most cases, it is possible to reach a solid 45FPS (and more!) without any screen tearing, even with moderate spi speeds. 
+- **VSync and screen tearing prevention.** This is the best part :-) The driver monitors the position of the current scanline being refreshed on the screen and orders the pixel updates so that they trail behind this scanline. This makes it possible to completely suppress screen tearing (provided the update can be done in less than two refresh periods).
 
 - **Multiple buffering methods.** Support direct upload and double buffering. Partial updates of the screen, with direct or deferred redraw, is also available. 
 
-- **Optimized for use with the LVGL library** Easy to integrate with the <a href="https://github.com/lvgl/lvgl">lvgl library</a>. Blazzingly fast (tear free!) GUI is obtained by using partial differential updates (and without requiring full double buffering - only about 200KB of RAM needed).   
+- **Optimized for use with the LVGL library** Easy to integrate with the <a href="https://github.com/lvgl/lvgl">lvgl library</a>. Blazzingly fast (tear free!) GUI is obtained by using partial differential updates.
 
-- **driver for a XPT2046 touchscreen.** Some ILI9341 screens have an associated touchscreen. The driver can also manage this touchscreen on the same spi bus making sure there is no spi conflict.  This simplifies the wiring since only one (or two when using touch interrupt) additional wires are needed to enable touch in that case.  
+- **driver for a XPT2046 touchscreen.** Some ILI9341 screens have an associated resistive touchscreen. The driver can also manage this touchscreen on the same spi bus making sure there is no spi conflict.  This simplifies the wiring since only one (or two if using the touch interrupt) additional wires are required.  
 
 
 ## Warnings
 
-**(1) This library only works with Teensy 4/4.1 but not with Teensy 3.2/3.5/3.6. You need lots of memory (typically 2 framebuffers and a couple of diff buffers which means around 320Kb of RAM) so it would not be practical to use the library with those other MCUs anyway...**
+**(1) This library only works with Teensy 4/4.1/Micromod.**
 
-**(2) The library's only task is to perform framebuffer upload from memory to the screen. It does not provide any drawing primitive. You must use another canvas library to draw directly onto the memory framebuffer. To do so, you can use the <a href="https://github.com/vindar/tgx">tgx</a> library which provides optimized drawing primitives for 2D and 3D graphics on a memory framebuffer.**
+**(2) The library's sole purpose is to perform framebuffer upload from memory to the screen. It does not provide any drawing primitive. You must use another canvas library to draw directly onto the memory framebuffer. To do so, you may use my <a href="https://github.com/vindar/tgx">tgx</a> library which provides optimized drawing primitives for 2D and 3D graphics.**
 
 
 ## Using the library
 
 ### 0. Physical setup / wiring
 
-The library can work with any SPI bus and mutliples instances of the driver can manage multiple displays on different spi bus. A significant speedup is possible when the DC pin from the ILI9341 screen is connected to a hardware CS (chip select) capable pin on the Teensy... Yes, this requirement may seems weird at first... In that case, the library will use the spi FIFO and DMA to their full capabilities and it will provide a nice speed up (around 35% faster framerate) while reducing the busy time (by around 20%). 
+The library can work with any SPI bus and multiples instances of the driver can manage multiple displays on different SPI buses. A significant speedup is possible when the DC pin from the ILI9341 screen is connected to a hardware CS (chip select) capable pin on the Teensy... Yes, this requirement may seems weird at first... In that case, the library will use the spi FIFO and DMA to their full capabilities and it will provide a nice speed up (around 35% faster framerate) while reducing the busy time (by around 20%). 
 
 **ADVICE: Set DC to a hardware chip select capable pin of the Teensy whenever possible (the CS pin from the screen can be connected to any pin on the Teensy, it does not matter...)**
 
@@ -208,7 +204,7 @@ What actually happens when the method is called depends on the buffering and vsy
 
 Putting everything together. A simple code for drawing an animation on the screen should look something like this:
 ```
-#include "ILI9341Driver.h"
+#include <ILI9341Driver.h>
 
 // this is the main screen driver object.
 ILI9341_T4::ILI9341Driver tft(CS_PIN, DC_PIN, SCK_PIN, MOSI_PIN, MISO_PIN, RST_PIN, TOUCH_CS_PIN, TOUCH_IRQ_PIN); 
