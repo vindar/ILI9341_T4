@@ -14,7 +14,7 @@
     "maintainer": true
   },
   "homepage": "https://github.com/vindar/ILI9341_T4",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "frameworks": "arduino",
-  "platforms": ["Teensy", "avr"]
+  "platforms": "teensy"
 }
