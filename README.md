@@ -12,19 +12,19 @@
 This library implements a SPI driver for the ILI9341 screen controller providing the ability to display memory framebuffers onto the screen very efficiently. 
 The following advanced features are available:
 
-- **Differential redraws.** The driver compares the framebuffer to be uploaded with the previous one and uploads only the pixels that differ. It does so in a smart way to minimize spi transaction / RAMWR commands. Uploading only parts of the screen makes it possible to achieve extremely high frame rates when moderate changes occur between frames (hundreds of FPS for simple cases like UIs). 
+- **Differential redraws.** The driver compares the framebuffer to be uploaded with the previous one and uploads only the pixels that differ. It does so in a smart way to minimize spi transaction / RAMWR commands. Uploading only parts of the screen makes it possible to achieve very high frame rates even with low SPI speeds.
 
 - **Asynchronous updates via DMA.** Upload can be performed directly or asynchronously using DMA so the MCU is free to do other tasks - like generating the next frame - during updates.
 
 - **adjustable framerate.** The screen refresh rate can be adjusted between 40hz and 130Hz and a framerate can be set within the driver. Uploads are timed to meet the requested framerate.
 
-- **VSync and screen tearing prevention.** This is the best part :-) The driver monitors the position of the current scanline being refreshed on the screen and orders the pixel updates so that they trail behind this scanline. This makes it possible to completely suppress screen tearing (provided the update can be done in less than two refresh periods).
+- **VSync and screen tearing prevention.** This is the best part :-) The driver monitors the position of the current scanline being refreshed on the screen and orders the pixel updates so that they trail behind this scanline. This makes it possible to completely suppress screen tearing in most cases.
 
 - **Multiple buffering methods.** Support direct upload and double buffering. Partial updates of the screen, with direct or deferred redraw, is also available. 
 
-- **Optimized for use with the LVGL library** Easy to integrate with the <a href="https://github.com/lvgl/lvgl">lvgl library</a>. Blazzingly fast (tear free!) GUI is obtained by using partial differential updates.
+- **Optimized for use with the LVGL library** Easy to integrate with the <a href="https://github.com/lvgl/lvgl">lvgl library</a>. Blazzingly fast (tear free) GUI is obtained by using partial differential updates.
 
-- **driver for a XPT2046 touchscreen.** Some ILI9341 screens have an associated resistive touchscreen. The driver can also manage this touchscreen on the same spi bus making sure there is no spi conflict.  This simplifies the wiring since only one (or two if using the touch interrupt) additional wires are required.  
+- **driver for a XPT2046 touchscreen.** Some ILI9341 screens have an associated resistive touchscreen. The driver can also manage this touchscreen on the same SPI bus making sure there is no SPI conflict.  Thus only one (or two if using the touch interrupt) additional wires are required.  
 
 
 ## Warnings
@@ -38,7 +38,7 @@ The following advanced features are available:
 
 ### 0. Physical setup / wiring
 
-The library can work with any SPI bus and multiples instances of the driver can manage multiple displays on different SPI buses. A significant speedup is possible when the DC pin from the ILI9341 screen is connected to a hardware CS (chip select) capable pin on the Teensy... Yes, this requirement may seems weird at first... In that case, the library will use the spi FIFO and DMA to their full capabilities and it will provide a nice speed up (around 35% faster framerate) while reducing the busy time (by around 20%). 
+The library can work with any SPI bus and multiples instances of the driver can manage multiple displays on different SPI buses. *A significant speedup is possible when the DC pin from the ILI9341 screen is connected to a hardware CS (chip select) capable pin on the Teensy*... Yes, this requirement may seems weird at first... In that case, the library will use the spi FIFO and DMA to their full capabilities which increases the framerate (around 35% faster) while reducing CPU usage (by around 20%). 
 
 **ADVICE: Set DC to a hardware chip select capable pin of the Teensy whenever possible (the CS pin from the screen can be connected to any pin on the Teensy, it does not matter...)**
 
@@ -87,13 +87,13 @@ We need at least one memory frame buffer that we will use to draw onto:
 ```
 uint16_t fb[240*320]; // our memory framebuffer. The screen has size 240 x 320 with color in 16 bits - RGB565 format
 ```
-Also, if we want to activate double buffering (we do!), we need another framebuffer that will provide to the driver for internal use:
+Also, if we want to activate double buffering (we do!), we need another framebuffer that we will give to the driver for internal use:
 ```
 DMAMEM uint16_t fb_internal[240*320];  // the 'internal' frame buffer that will be used for double buffering
 ```
 The above buffer has been placed in the upper 512K (dmamem) portion of the memory to preserve the RAM in the faster lower portion (dtcm). Buffers can be placed anywhere in RAM (even in EXTMEM if external ram is present but there will be a speed penalty in that case).
 
-**Remark.** Not using any internal framebuffer is possible but, in that case, asynchronous and differential updates will be disabled, thus removing most of the library benefit... **ADVICE: always use double buffering !**
+**Remark.** Not using an internal framebuffer is possible but will disable asynchronous and differential updates, thus removing most of the library benefit... **ADVICE: always use double buffering !**
 
 
 #### (c) Diff buffers
@@ -133,16 +133,16 @@ The "natural" orientation is `orientation=0` for which the pixels in the framebu
 
 To set the screen orientation, use the method `setRotation()`:
 ```
-tft.setRotation(0); // use the most efficient orientation 0 (portrait mode 240x320)
+tft.setRotation(0); // use orientation 0 (portrait mode 240x320)
 ```
 
 #### (c) Setting up buffering mode
 
-For using double buffering, we must register the internal framebuffer previously created like so:
+To activate double buffering, we must register the internal framebuffer previously created like so:
 ```
 tft.setFramebuffer(fb_internal); // registers the internal framebuffer
 ```
-The method can be called again to change the buffering mode on the fly. Call the method without parameter to remove the current internal framebuffer and fall back to the (inefficient) direct upload mode.
+The method can be called again to change the buffering mode on the fly. Calling this method without parameter removes the current internal framebuffer (and the drivers switches to the inefficient direct upload mode).
 
 #### (d) Setting up differential redraws
 
@@ -214,7 +214,7 @@ uint16_t fb[240*320]; // our memory framebuffer. The screen has size 240 x 320 w
 DMAMEM uint16_t fb_internal[240*320];  // the 'internal' frame buffer
 
 ILI9341_T4::DiffBuffStatic<4096> diff1; // a first diff buffer with 4K memory (statically allocated)
-ILI9341_T4::DiffBuffStatic<4096> diff2; // and a second one (useful even for double buffering)
+ILI9341_T4::DiffBuffStatic<4096> diff2; // and a second one 
 
 
 void draw_something_onto(uint16_t * fb)
@@ -231,7 +231,7 @@ void setup()
   
   while(!tft.begin(SPI_WRITE_SPEED, SPI_READ_SPEED)); // intialization
       
-  tft.setRotation(0);                  // use the most efficient orientation (portrait mode)
+  tft.setRotation(0);                  // use orientation 0 : portrait mode 240x320
   tft.setFramebuffer(fb_internal);     // register the internal framebuffer: this activates double buffering
   tft.setDiffBuffers(&diff1, &diff2);  // registers 2 diff buffers: this activates differential updates
   tft.setRefreshRate(120);             // set the display refresh rate around 120Hz
