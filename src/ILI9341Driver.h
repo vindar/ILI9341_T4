@@ -38,6 +38,8 @@
 #ifdef __cplusplus
 
 
+#include <Arduino.h>
+
 // This libray uses specify hardware features of IMXRT1062 and will not work with another MCU...
 #if (!defined(__IMXRT1062__))  ||  (!defined(CORE_TEENSY))
     #error "Library ILI9341_T4 only supports Teensy 4/4.1/micromod."
@@ -47,7 +49,6 @@
 #include "StatsVar.h"
 #include "DiffBuff.h"
 
-#include <Arduino.h>
 #include <DMAChannel.h>
 #include <SPI.h>
 #include <stdint.h>
