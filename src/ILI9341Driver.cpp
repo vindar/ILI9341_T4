@@ -1342,7 +1342,7 @@ namespace ILI9341_T4
         }
 
 
-    void ILI9341Driver::_subFrameTimerStartcb()
+    FLASHMEM void ILI9341Driver::_subFrameTimerStartcb()
         {
         // we should be around scanline 0 (unless we are late). 
         _restartCpuTime();
@@ -1375,7 +1375,7 @@ namespace ILI9341_T4
 
 
 
-    void ILI9341Driver::_subFrameTimerStartcb2()
+    FLASHMEM void ILI9341Driver::_subFrameTimerStartcb2()
         {
         _restartUploadTime();
         _restartCpuTime();
@@ -1461,7 +1461,7 @@ namespace ILI9341_T4
 
 
 
-    void ILI9341Driver::_subFrameInterruptDiff()
+    FLASHMEM void ILI9341Driver::_subFrameInterruptDiff()
         {
         if (_vsync_spacing > 0)
             { // check margin when using vsync
@@ -1595,7 +1595,7 @@ namespace ILI9341_T4
         }
 
 
-    void ILI9341Driver::_subFrameInterruptDiff2()
+    FLASHMEM void ILI9341Driver::_subFrameInterruptDiff2()
         {
         //noInterrupts();        // UNNEEDED ?
         _restartUploadTime();
@@ -1614,7 +1614,7 @@ namespace ILI9341_T4
     ILI9341Driver* volatile ILI9341Driver::_dmaObject[3] = { nullptr, nullptr, nullptr }; 
 
 
-    void ILI9341Driver::_dmaInterruptDiff()
+    FLASHMEM void ILI9341Driver::_dmaInterruptDiff()
         { 
         //noInterrupts();        // UNNEEDED ?
         _dmatx.clearInterrupt();
@@ -1643,7 +1643,7 @@ namespace ILI9341_T4
 
     ILI9341Driver* volatile ILI9341Driver::_pitObj[4] = {nullptr, nullptr, nullptr, nullptr};   // definition 
 
-    void ILI9341Driver::_timerinit()
+    FLASHMEM void ILI9341Driver::_timerinit()
         {
         _istimer = false; 
         for (int i = 0; i < 4; i++)
