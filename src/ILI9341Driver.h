@@ -1279,6 +1279,21 @@ public:
     **/
     bool readTouch(int& x, int& y, int& z);
 
+    /**
+    * Read the touchscreen. Return the position (x,y). Same as above but do not store the pressure level.
+    * Return true if the screen is being touched.
+    * 
+    * The coord. (x,y) returned are given w.r.t. the current screen orientation if calibration
+    * data are loaded but are 'raw' value (independent of orientation) is no calibration data
+    * is currently loaded. 
+    * 
+    * If the touch_irq pin is assigned, the method will avoid using the SPI bus whenever possible.
+    *
+    * If the SPI bus must be used. The method will wait until the current ongoing transfer
+    * completes (if any). This means that this method may stall for a few milliseconds. 
+    **/
+    bool readTouch(int& x, int& y);
+
 
     /**
     * Set a mapping from touch coordinates to screen coordinates (or 

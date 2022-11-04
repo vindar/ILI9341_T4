@@ -2497,7 +2497,7 @@ namespace ILI9341_T4
 
 
 
-    bool ILI9341Driver::readTouch(int& x, int& y, int& z)
+    FLASHMEM bool ILI9341Driver::readTouch(int& x, int& y, int& z)
         {
         _updateTouch();
         if (_touch_z < _touch_z_threshold) return false;
@@ -2534,6 +2534,12 @@ namespace ILI9341_T4
         return true;
         }
 
+
+    FLASHMEM bool ILI9341Driver::readTouch(int& x, int& y)
+        {
+        int z;
+        return readTouch(x, y, z);
+        }
 
 
     int16_t ILI9341Driver::_besttwoavg(int16_t x, int16_t y, int16_t z)
