@@ -1,7 +1,7 @@
 # ILI9341_T4
 
 <p align="center">
-<img src="./ILI9341.jpg" height="300" />
+<img src="https://github.com/vindar/ILI9341_T4/blob/main/ILI9341.jpg" height="300" />
 <a href="https://www.youtube.com/watch?v=lLYCwFRF4Mc" target="_blank"><img src="http://img.youtube.com/vi/lLYCwFRF4Mc/0.jpg" 
  width="400" height="300" border="10" /></a></p>
 
@@ -12,37 +12,37 @@
 This library implements a SPI driver for the ILI9341 screen controller providing the ability to display memory framebuffers onto the screen very efficiently. 
 The following advanced features are available:
 
-- **Differential redraws.** The driver compares the framebuffer to be uploaded with the previous one and uploads only the pixels that differ. It does so in a smart way to minimize spi transaction / RAMWR commands. Uploading only parts of the screen makes it possible to achieve very high frame rates even with low SPI speeds.
+- **Differential redraws.** The driver compares the framebuffer to be uploaded with the previous one and uploads only the pixels that differ. It does so in a smart way to minimize SPI transactions. Uploading only parts of the screen makes it possible to achieve very high frame rates even with low SPI speeds.
 
 - **Asynchronous updates via DMA.** Upload can be performed directly or asynchronously using DMA so the MCU is free to do other tasks - like generating the next frame - during updates.
 
-- **adjustable framerate.** The screen refresh rate can be adjusted between 40hz and 130Hz and a framerate can be set within the driver. Uploads are timed to meet the requested framerate.
+- **adjustable framerate.** The screen refresh rate can be adjusted between 40hz and 130Hz and a fixed framerate can be set within the driver. Uploads are timed to meet the requested framerate.
 
-- **VSync and screen tearing prevention.** This is the best part :-) The driver monitors the position of the current scanline being refreshed on the screen and orders the pixel updates so that they trail behind this scanline. This makes it possible to completely suppress screen tearing in most cases.
+- **VSync and screen tearing prevention.** This is the best part :smiley:. The driver monitors the position of the current scanline being refreshed on the screen and orders the pixel updates so that they trail behind this scanline. This makes it possible to completely suppress screen tearing in most cases.
 
-- **Multiple buffering methods.** Support direct upload and double buffering. Partial updates of the screen, with direct or deferred redraw, is also available. 
+- **Multiple buffering methods.** Support direct upload and double buffering. Partial updates of the screen, with direct or deferred redraw, are also available. 
 
-- **Optimized for use with the LVGL library** Easy to integrate with the <a href="https://github.com/lvgl/lvgl">lvgl library</a>. Blazzingly fast (tear free) GUI is obtained by using partial differential updates.
+- **Optimized for use with the LVGL library** Easy to integrate with the <a href="https://github.com/lvgl/lvgl">lvgl library</a>. Blazzingly fast (tear free) GUI is obtained using partial differential updates.
 
-- **driver for a XPT2046 touchscreen.** Some ILI9341 screens have an associated resistive touchscreen. The driver can also manage this touchscreen on the same SPI bus making sure there is no SPI conflict.  Thus only one (or two if using the touch interrupt) additional wires are required.  
+- **driver for a XPT2046 touchscreen.** Some ILI9341 screens have an associated resistive touchscreen. The driver can also manage this touchscreen on the same SPI bus.  Thus, only one (or two if using the touch interrupt) additional wires are required.  
 
 
 ## Warnings
 
 **(1) This library only works with Teensy 4/4.1/Micromod.**
 
-**(2) The library's sole purpose is to perform framebuffer upload from memory to the screen. It does not provide any drawing primitive. You must use another canvas library to draw directly onto the memory framebuffer. To do so, you may use my <a href="https://github.com/vindar/tgx">tgx</a> library which provides optimized drawing primitives for 2D and 3D graphics.**
+**(2) The library's sole purpose is to perform framebuffer upload from memory to the screen. It does not provide any drawing primitive. You must use another canvas library to draw directly onto the memory framebuffer. To do so, you may use my <a href="https://github.com/vindar/tgx">TGX</a> library which provides optimized drawing primitives for 2D and 3D graphics.**
 
 
 ## Using the library
 
 ### 0. Physical setup / wiring
 
-The library can work with any SPI bus and multiples instances of the driver can manage multiple displays on different SPI buses. *A significant speedup is possible when the DC pin from the ILI9341 screen is connected to a hardware CS (chip select) capable pin on the Teensy*... Yes, this requirement may seems weird at first... In that case, the library will use the spi FIFO and DMA to their full capabilities which increases the framerate (around 35% faster) while reducing CPU usage (by around 20%). 
+The library can work with any SPI bus. Multiples instances of the driver can manage multiple displays on different SPI buses. *A significant speedup is possible when the DC pin from the ILI9341 screen is connected to a hardware CS (chip select) capable pin on the Teensy*... Yes, this requirement may seems weird at first ! In that case, the library will use the SPI FIFO and DMA to their full capabilities which increases the framerate (around 35% faster) while reducing CPU usage (by around 20%). 
 
 **ADVICE: Set DC to a hardware chip select capable pin of the Teensy whenever possible (the CS pin from the screen can be connected to any pin on the Teensy, it does not matter...)**
 
-On teensy 4/4.1, one can use either SPI0 or SPI1 (SPI2 might also work but it is not readily accessible and untested yet). Here are possible wirings in both cases:
+On teensy 4/4.1, one can use either SPI0 or SPI1 (SPI2 should also work but is not readily accessible and untested). Here are possible wirings in both cases:
 
 ILI9341 SCREEN | TEENSY 4/4.1 (SPI0) | TEENSY 4/4.1 (SPI1) |NOTE
 --- | --- | --- | ---
@@ -60,13 +60,15 @@ SDO (MISO) | PIN 12 | PIN 1 |  Mandatory
 - If CS = 255, do not forget to connect the CS pin from the display (if present) to GND.
 - If RST = 255, do not forget to connect the RST pin from the display to 3.3V 
 
-### 1. Including the library 
+### 1. Installing/Including the library 
 
-As for any arduino library, it should be installed in arduino's `/libraries` subfolder where it will be found automatically. Then, we only need to include the library's main header. 
+The library can be installed directly from Arduino's or PlatformIO's library manager (search for ILI9341_T4). Alternatively, one can simply copy this git repository into arduino's `/libraries` subfolder. 
+
+In order to use the library, we only need to include the library's main header: 
 ```
 #include <ILI9341_T4.h>
 ```
-Everything in the library is located under the `ILI9341_T4` namespace so the include will not pollute the global namespace.
+Everything in the library is located under the `ILI9341_T4` namespace to prevent polluting the global namespace.
 
 
 ### 2. Creation of the global objects 
@@ -79,11 +81,11 @@ ILI9341_T4::ILI9341Driver tft( CS_PIN, DC_PIN, SCK_PIN, MOSI_PIN, MISO_PIN, RST_
 ```
 The `TOUCH_CS` and `TOUCH_IRQ` pin should be specified only if the screen has an associated XPT2046 touchscreen *on the same spi bus as the screen*, otherwise, just omit the last two parameters. 
 
-**Remark.** The `DC_PIN`, `SCK_PIN`, `MOSI_PIN`, `MISO_PIN` are mandatory, the other ones can be set to 255. As already mentioned, use a hardware cs pin for DC whenever possible to benefit from hardware speedup. 
+**Remark.** The `DC_PIN`, `SCK_PIN`, `MOSI_PIN`, `MISO_PIN` are mandatory, the other ones can be set to 255. As already mentioned, use a hardware CS pin for DC whenever possible to benefit from hardware speedup. 
 
 #### (b) Memory framebuffers
 
-We need at least one memory frame buffer that we will use to draw onto:
+We need at least one memory framebuffer that we will use to draw onto:
 ```
 uint16_t fb[240*320]; // our memory framebuffer. The screen has size 240 x 320 with color in 16 bits - RGB565 format
 ```
@@ -93,21 +95,21 @@ DMAMEM uint16_t fb_internal[240*320];  // the 'internal' frame buffer that will
 ```
 The above buffer has been placed in the upper 512K (dmamem) portion of the memory to preserve the RAM in the faster lower portion (dtcm). Buffers can be placed anywhere in RAM (even in EXTMEM if external ram is present but there will be a speed penalty in that case).
 
-**Remark.** Not using an internal framebuffer is possible but will disable asynchronous and differential updates, thus removing most of the library benefit... **ADVICE: always use double buffering !**
+**Remark.** Not using an internal framebuffer is possible but it will disable asynchronous and differential updates, thus removing most of the library benefit... **ADVICE: always use double buffering !**
 
 
 #### (c) Diff buffers
 
-When the library is working in double buffering mode, it can take advantage of the fact that the last internal buffer uploaded to the screen mirrors the screen content. Therefore, when a new framebuffer is to be uploaded, the library can quickly check which pixels have changed and only upload those. This provides a huge speed bump when only a fraction of pixels changes at each frame (which is common when displaying user interface for instance). The library is said to use **differential updates** in that case. When performing differential updates, the library first creates a **diff log** of all the changes between the new framebuffer and the previous one. Once this is accomplished, it can overwrite the internal frame buffer containing the old frame with the new one and, when an update is needed, just read the diff to select the pixels that must be pushed onto the screen. Updates can be carried away asynchronously while the user code draws the next frame. 
+When the library is working in double buffering mode, it can take advantage of the fact that the last internal buffer uploaded to the screen mirrors the screen content. Therefore, when a new framebuffer is to be uploaded, the library can quickly check which pixels have changed and only upload those. This provides a huge speed bump when only a fraction of pixels changes at each frame (which is common when displaying a user interface for instance). The library is said to use **differential updates** in that case. When performing differential updates, the library first creates a **diff log** of all the changes between the new framebuffer and the previous one. Once this is accomplished, it can overwrite the internal frame buffer containing the old frame with the new one and, when an update is needed, just read the diff to select the pixels that must be pushed onto the screen. Updates can be carried away asynchronously while the user code draws the next frame. 
 
 So, in order to store the diff log, we must allocate some memory for a **diff buffer** which is an object that stores diff logs:
 ```
 ILI9341_T4::DiffBuffStatic<4096> diff1; // a first diff buffer with 4K memory (statically allocated)
 ILI9341_T4::DiffBuffStatic<4096> diff2; // and a second one. 
 ```
-The template parameter above specifies the size (in bytes) of the buffer. It should range from 1K to 10K depending on the kind of content displayed. The method `diff1.printStats()` can be used to check the diff buffer memory consumption and adjust its size accordingly.
+The template parameter above specifies the size (in bytes) of the buffer. It should range from 1K to 10K depending on the kind of content displayed. The method `diff1.printStats()` can be used to check the diff buffer memory consumption at runtime to help choose its correct size.
 
-**Remark.** You can set either 0, 1 or 2 diff buffers. Not providing any diff buffer will disable differential updates :(. On the other hand, providing 2 diff buffers allows the driver to compute the new diff while the previous one is currently in use for an upload and thus provides a nice speed bump. **ADVICE: always use two diff buffers !**.
+**Remark.** You can set either 0, 1 or 2 diff buffers. Not providing any diff buffer will disable differential updates. On the other hand, providing 2 diff buffers allows the driver to compute the new diff while the previous one is currently in use for an upload and thus provides a nice speed bump. **ADVICE: always use two diff buffers !**.
 
 ### 3. Initialization and configuration. 
 
@@ -121,13 +123,13 @@ void setup()
       Serial.print("ouch !")
   ...
 ```
-This method returns `true` if the screen was correctly initialized. Note that there is no corresponding `end()` method so `begin()` should normally be called only once (but it can still be called again to issue a hard reset). The SPI_WRITE_SPEED and SPI_READ_SPEED parameters can be omitted so default speeds for write/read spi will be used. The spi read speed does not really matter and should not be changed. On the other hand, the maximum possible framerate is proportional to the spi write speed so it should be set as high as possible while still keeping a stable connexion. With short wires, many displays will easily accept speeds upward of 60Mhz...
+This method returns `true` if the screen was correctly initialized. Note that there is no corresponding `end()` method so `begin()` should normally be called only once (but it can still be called again to issue a hard reset). The SPI_WRITE_SPEED and SPI_READ_SPEED parameters can be omitted so default speeds for write/read SPI will be used. The SPI read speed does not really matter and should not be changed. On the other hand, the maximum possible framerate is proportional to the SPI write speed so it should be set as high as possible while still keeping a stable connexion. With short wires, many displays will easily accept speeds upward of 60Mhz...
 
 #### (b) Choosing the screen orientation 
 
 There are 4 possible orientations for the display (matching, of course, to the four physical orientations). Each one is obtained from the previous one by rotating the screen 90 degrees clockwise. Orientation 0 and 2 are in portrait mode 240x320 whereas orientation 1 and 3 are in landscape mode 320x240. In all cases, the framebuffer layout is in row-major format: if the screen has size LX x LY, then 
 
-Pixel(i , j) = framebuffer[ LX * j  + i]  with 0 <= i < LX and 0 <= j < LY. 
+Pixel(i , j) = framebuffer[ LX * j  + i]  with 0 ≤ i < LX and 0 ≤ j < LY. 
 
 The "natural" orientation is `orientation=0` for which the pixels in the framebuffer are ordered the same way that they are refreshed on the screen. This orientation will give the best possible upload rate and should be favored if possible.
 
@@ -142,7 +144,7 @@ To activate double buffering, we must register the internal framebuffer previous
 ```
 tft.setFramebuffer(fb_internal); // registers the internal framebuffer
 ```
-The method can be called again to change the buffering mode on the fly. Calling this method without parameter removes the current internal framebuffer (and the drivers switches to the inefficient direct upload mode).
+The method can be called again to change the buffering mode on the fly. Calling this method without a parameter removes the current internal framebuffer (and the drivers switches to the inefficient direct upload mode).
 
 #### (d) Setting up differential redraws
 
@@ -150,7 +152,7 @@ To enable differential updates, we must also register the diff buffers:
 ```
 tft.setDiffBuffers(&diff1, &diff2); // registering the 2 diff buffers. This activates differential update mode
 ```
-Note that, without an internal framebuffer, differential updates cannot be performed so any registered diff buffers will be ignored (until an internal framebuffer is set). Whenever an internal framebuffer and at least 1 diff buffer are registered, differential updates are automatically enabled. As mentioned before: always favor 2 diffs buffers instead of 1 !
+Note that, without an internal framebuffer, differential updates cannot be performed so any registered diff buffers will be ignored (until an internal framebuffer is set). Whenever an internal framebuffer and at least 1 diff buffer are registered, differential updates are automatically enabled. As mentioned before: *always favor 2 diffs buffers instead of 1 !*
 
 #### (e) Setting the refreshrate and the framerate
 
@@ -160,11 +162,10 @@ The **framerate** on the other hand is the number of times the screen content is
 
 In order to prevent this, the driver keeps track of the refresh times and tries to upload pixels trailing behind the scanline. However, if the upload rate is much slower than the refresh rate, then the scanline will still eventually catch up with the pixels being uploaded and screen tearing will occur. In order to get prevent visual artifact and insure a stable framerate, the following two conditions should be met:
 
-[1] The time to upload a whole frame must take no longer than 2 refresh periods. 
+1. The time to upload a whole frame must take no longer than 2 refresh periods. 
+2. The framerate must divide the refreshrate (ie framerate=refreshrate/N for some positive integer N). 
 
-[2] The frame rate must divide the refresh rate (ie framerate=refreshrate/N for some positive integer N). 
-
-The first condition depends heavily on the SPI speed. For example, with SPI set at 60Mhz, it is possible to upload up to 45 full frames per second. Being cautious, we can set a refresh rate at 80Hz and a framerate at 40Hz = (80/2) to obtain tear free frames on the screen. However, this computation is a worst case scenario: for most usage, differential updates boost the upload speed tremendously and it is often possible to get "tear free" display at 60Hz frame rate (and 120Hz refresh rate) with only 20Mhz SPI speed !
+The first condition depends heavily on the SPI speed. For example, with SPI set at 60Mhz, it is possible to upload up to 45 full frames per second. Being cautious, we can set a refresh rate at 80Hz and a framerate at 40Hz = (80/2) to obtain tear free frames on the screen. However, this computation is a worst case scenario: for most usage, differential updates boost the upload speed tremendously so it is often possible to get "tear free" display at 60Hz framerate (and 120Hz refresh rate) with only 20Mhz SPI speed !
 
 The refresh rate is set with the `setRefreshRate()` method:
 ```
@@ -180,13 +181,12 @@ Now, we must tell the driver the actual framerate/vsync method that we want. Thi
 
 - **`vsync_spacing = N > 0`**. Synchronize uploads with screen refreshes to mitigate screen tearing. Perform upload every N screen refreshes so that the actual framerate is equal to framerate=refreshrate/N (provided, of course, that frames are pushed fast enough to the driver to achieve this rate).
 
-In practice, `vsync_spacing=-1` will give the fastest apparent framerate but will usually provide very poor visual quality. Setting `vsync_spacing=-0` will give slightly better results (but still with screen tearing) and still leaves the responsibility to the user of setting a stable framerate by pushing frames at regular intervals... In most cases, the best choice is to set `vsync_spacing = 2` and then adjust the refresh rate so that upload can be performed at refreshrate/2 FPS... Using `vsync_spacing = 1` should be reserved for drawing very simple frames which can be uploaded very quickly onto the screen (in less than a refresh period). Using `vsync_pacing >= 3` can be used to artificially reduce the framerate but I do not know of a really compelling reason to do so. 
+In practice, `vsync_spacing=-1` will give the fastest apparent framerate but will usually provide very poor visual quality. Setting `vsync_spacing=-0` will give slightly better results (but still with screen tearing) and still leaves the responsibility to the user of setting a stable framerate by pushing frames at regular intervals... In most cases, the best choice is to set `vsync_spacing = 2` and then adjust the refresh rate so that uploads can be performed at refreshrate/2 FPS... Using `vsync_spacing = 1` should be reserved for drawing very simple frames which can be uploaded very quickly onto the screen (in less than a refresh period). Using `vsync_pacing >= 3` can be used to artificially reduce the framerate but I do not know of a really compelling reason to do so. 
 
 So, we select the framerate and vsync mode with:
 ```
 tft.setVSyncSpacing(2); // enable vsync and set framerate = refreshrate/2 (typical choice)
 ```
-
 That's it, the driver's configuration is now complete and we can start displaying frames !
 
 ### 4. Pushing a framebuffer onto the screen.
@@ -263,7 +263,7 @@ tft.update(fb, true); // fb will be uploaded without computing the diff (but jus
 
 - **Printing statistics**. Several methods are available to provide detailed statistics about the performance of the driver. All these methods take the form `statsXXX`. Also, there is a very convenient method for debugging/optimization call `printStats()` that will print out all the statistics of the driver onto the output stream (set with the `output()` method). 
 
-- **Drawing text on the framebuffer** The `overlayText()` method can be used to draw some text onto the framebuffer. This is useful for displaying basic informations or debugging. For more advance formatting, one must use a dedicated graphics library such <a href="https://github.com/vindar/tgx">tgx</a>... Similarly, the method `overlayFPS()` draws the current instantaneous framerate onto a given framebuffer. Both methods `overlayText()` and `overlayFPS()` are typically called just before calling `update()`.
+- **Drawing text on the framebuffer** The `overlayText()` method can be used to draw some text onto the framebuffer. This is useful for displaying basic informations or debugging. Similarly, the method `overlayFPS()` draws the current instantaneous framerate onto a given framebuffer. Both methods `overlayText()` and `overlayFPS()` are typically called just before calling `update()`.
 
 - **diff buffer and memory allocation**. The library performs no memory allocation. All the memory needed (framebuffer and diff buffers) are to be provided by the user which keeps complete control over memory allocation. For diff buffers, the `StaticDiffBuffer<>` template class provides a convenient way to create diff buffers with statically allocated memory. However, if more control is needed, one can use the base `DiffBuffer` class which is similar but requires the user to provide the memory space at construction time. See the file `DiffBuff.h` for additional details. 
 
@@ -281,8 +281,7 @@ ILI9341 SCREEN | TEENSY 4/4.1
 `T_DO` | same pin on the Teensy as `SDO (MISO)`
 `T_IRQ` | (optional) any available digital pin
 
-- **Last but not least: drawing things on the frame buffer**. The library itself provides not drawing primitive. It simply pushes/mirror a memory frame buffer onto the screen. You can use draw on the framebuffer directly 'by hand' or use any library you wish...  If you want a (relatively) lightweight, fast, full featured 2D and 3D graphics library optimized for microcontrollers, you should check out my <a href="https://github.com/vindar/tgx">tgx library</a> !
-If you want to create a GUI, you can use the <a href="https://github.com/lvgl/lvgl">LVGL library</a>. It can easily and efficiently combined with ILI9341, c.f.  [this example](https://github.com/vindar/ILI9341_T4/tree/main/examples/lvgl_touch_minimal) and [this one](https://github.com/vindar/ILI9341_T4/tree/main/examples/lvgl_music_demo).
+- **Last but not least: drawing things on the frame buffer**. The library itself provides not drawing primitive. It simply pushes/mirror a memory frame buffer onto the screen. You can draw on the framebuffer directly 'by hand' or use any library you wish to do so...  If you want a lightweight, fast, full featured 2D and 3D graphics library optimized for microcontrollers, you should check out my <a href="https://github.com/vindar/tgx">tgx library</a> :smiley:. If you want to create a GUI, you can use the powerful <a href="https://github.com/lvgl/lvgl">LVGL library</a>. It can be easily combined with ILI9341, c.f.  [this example](https://github.com/vindar/ILI9341_T4/tree/main/examples/lvgl_touch_minimal) and [this one](https://github.com/vindar/ILI9341_T4/tree/main/examples/lvgl_music_demo).
 
 
 ## Credits
