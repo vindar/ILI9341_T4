@@ -31,6 +31,15 @@ namespace ILI9341_T4
 {
 
 
+
+    /* approximation of the real refresh rate for  each mode */
+    static const float ILI9341_T4_refresh_rates[] PROGMEM  = { 141.0f,133.0f,126.0f,119.0f,113.0f,108.0f,103.0f,98.0f,
+                                                               94.0f,90.0f,87.0f,84.0f,81.0f,78.0f,75.0f,73.0f,
+                                                               70.0f,66.0f,63.0f,59.0f,56.0f,54.0f,51.0f,49.0f,
+                                                               47.0f,45.0f,43.0f,42.0f,40.0f,39.0f,37.0f,36.0f };
+
+
+
     /**********************************************************************************************************
     * Initialization and general settings
     ***********************************************************************************************************/
@@ -81,8 +90,10 @@ namespace ILI9341_T4
         _mosi = mosi;
         _miso = miso;
         _rst = rst;
+
         _touch_cs = touch_cs;
         _touch_irq = touch_irq;
+
         _spi_num = 255;
         _cspinmask = 0;
         _csport = NULL;
@@ -136,6 +147,13 @@ namespace ILI9341_T4
             pinMode(_touch_cs, OUTPUT);
             digitalWrite(_touch_cs, HIGH);
             }
+
+        if ((_miso == 255) && ((_touch_cs != 255) || (_touch_irq != 255)))
+            { // disable touch is there is no miso
+            _print("*** WARNING: Disabling the touchscreen because MISO_PIN = 255 ! ***\n\n ");
+            _touch_cs = 255;
+            _touch_irq = 255;
+            }
         
         if (_cs != 255)
             { // set screen CS high also. 
@@ -156,13 +174,21 @@ namespace ILI9341_T4
         else _printf("- MOSI on pin %d [SPI%d]\n", _mosi, spinum_MOSI);
 
         int spinum_MISO = -1; 
-        if (SPI.pinIsMISO(_miso)) spinum_MISO = 0;  else if (SPI1.pinIsMISO(_miso)) spinum_MISO = 1; else if (SPI2.pinIsMISO(_miso)) spinum_MISO = 2;
-        if (spinum_MISO < 0)
+        if (_miso != 255)
             {
-            _printf("\n*** ERROR: MISO on pin %d is not a valid SPI pin ! ***\n\n", _miso);
-            return false;
+            if (SPI.pinIsMISO(_miso)) spinum_MISO = 0;  else if (SPI1.pinIsMISO(_miso)) spinum_MISO = 1; else if (SPI2.pinIsMISO(_miso)) spinum_MISO = 2;
+            if (spinum_MISO < 0)
+                {
+                _printf("\n*** ERROR: MISO on pin %d is not a valid SPI pin (or set PIN_MISO=255 if it is not connected to display) ! ***\n\n", _miso);
+                return false;
+                } 
+            else _printf("- MISO on pin %d [SPI%d]\n", _miso, spinum_MISO);
             }
-        else _printf("- MISO on pin %d [SPI%d]\n", _miso, spinum_MISO);
+        else
+            {
+            _printf("- MISO not connected to display *** WARNING: VSync/Screen tearing protection is disabled *** !!!\n\n", _miso, spinum_MISO);
+            spinum_MISO = spinum_MOSI;
+            }
 
         int spinum_SCK = -1; 
         if (SPI.pinIsSCK(_sclk)) spinum_SCK = 0;  else if (SPI1.pinIsSCK(_sclk)) spinum_SCK = 1; else if (SPI2.pinIsSCK(_sclk)) spinum_SCK = 2;
@@ -201,7 +227,7 @@ namespace ILI9341_T4
         // Make sure we have all of the proper SPI pins selected.
         _pspi->setMOSI(_mosi);
         _pspi->setSCK(_sclk);
-        _pspi->setMISO(_miso);
+        if (_miso != 255) _pspi->setMISO(_miso);
 
         // Hack to get hold of the SPI Hardware information...
         uint32_t* pa = (uint32_t*)((void*)_pspi);
@@ -226,6 +252,12 @@ namespace ILI9341_T4
             }
 
         _spi_tcr_current = _pimxrt_spi->TCR; // get the current TCR value
+
+        if (_dc == 255)
+            {
+            _printf("\n*** ERROR: DC pin cannot be left unconnected ! ***\n\n", _sclk);
+            return false;
+            }
 
         _hardware_dc = _pspi->pinIsChipSelect(_dc);
 
@@ -330,49 +362,55 @@ namespace ILI9341_T4
             _writecommand_last(ILI9341_T4_DISPON); // Display on
             _endSPITransaction();
                      
-            // if everything is ok, we should have:
-            // - Display Power Mode = 0x9C
-            // - Pixel Format = 0x5
-            // - Image Format = 0x0
-            // - Self Diagnostic = 0xC0 
-            int res_RDMODE = _readcommand8(ILI9341_T4_RDMODE);
-            int res_RDPIXFMT = _readcommand8(ILI9341_T4_RDPIXFMT);
-            int res_RDIMGFMT = _readcommand8(ILI9341_T4_RDIMGFMT);
-            int res_RDSELFDIAG = _readcommand8(ILI9341_T4_RDSELFDIAG);
-            _print("\nReading status registers...\n");
-            _print("  - Display Power Mode : 0x"); _println(res_RDMODE, HEX);
-            _print("  - Pixel Format       : 0x"); _println(res_RDPIXFMT, HEX);
-            _print("  - Image Format       : 0x"); _println(res_RDIMGFMT, HEX);
-            _print("  - Self Diagnostic    : 0x"); _println(res_RDSELFDIAG, HEX);
-
             bool ok = true;
-            if ((res_RDMODE == 0) && (res_RDPIXFMT == 0) && (res_RDIMGFMT == 0) && (res_RDSELFDIAG == 0))
+            if (_miso != 255)
                 {
-                _print("\n*** ERROR: Cannot read screen registers. Check the MISO line or decrease SPI read speed ***\n\n");
-                ok = false;
+                // if everything is ok, we should have:
+                // - Display Power Mode = 0x9C
+                // - Pixel Format = 0x5
+                // - Image Format = 0x0
+                // - Self Diagnostic = 0xC0 
+                int res_RDMODE = _readcommand8(ILI9341_T4_RDMODE);
+                int res_RDPIXFMT = _readcommand8(ILI9341_T4_RDPIXFMT);
+                int res_RDIMGFMT = _readcommand8(ILI9341_T4_RDIMGFMT);
+                int res_RDSELFDIAG = _readcommand8(ILI9341_T4_RDSELFDIAG);
+                _print("\nReading status registers...\n");
+                _print("  - Display Power Mode : 0x"); _println(res_RDMODE, HEX);
+                _print("  - Pixel Format       : 0x"); _println(res_RDPIXFMT, HEX);
+                _print("  - Image Format       : 0x"); _println(res_RDIMGFMT, HEX);
+                _print("  - Self Diagnostic    : 0x"); _println(res_RDSELFDIAG, HEX);
+
+                if ((res_RDMODE == 0) && (res_RDPIXFMT == 0) && (res_RDIMGFMT == 0) && (res_RDSELFDIAG == 0))
+                    {
+                    _print("\n*** ERROR: Cannot read screen registers. Check the MISO line or decrease SPI read speed ***\n\n");
+                    ok = false;
+                    } else
+                    {
+                    if (res_RDMODE != 0x9C)
+                        { // wrong power display mode
+                        _print("\n*** ERROR: incorrect power mode ! ***\n\n");
+                        ok = false;
+                        }
+                    if (res_RDPIXFMT != 0x5)
+                        { // wrong pixel format
+                        _print("\n*** ERROR: incorrect pixel format ! ***\n\n");
+                        ok = false;
+                        }
+                    if (res_RDIMGFMT != 0x0)
+                        { // wrong image format
+                        _print("\n*** ERROR: incorrect image format ! ***\n\n");
+                        ok = false;
+                        }
+                    if (res_RDSELFDIAG != ILI9341_T4_SELFDIAG_OK)
+                        { // wrong self diagnotic value
+                        _print("\n*** ERROR: incorrect self-diagnotic value ! ***\n\n");
+                        ok = false;
+                        }
+                    }
                 }
             else
                 {
-                if (res_RDMODE != 0x9C)
-                    { // wrong power display mode
-                    _print("\n*** ERROR: incorrect power mode ! ***\n\n");
-                    ok = false;
-                    }
-                if (res_RDPIXFMT != 0x5)
-                    { // wrong pixel format
-                    _print("\n*** ERROR: incorrect pixel format ! ***\n\n");
-                    ok = false;
-                    }
-                if (res_RDIMGFMT != 0x0)
-                    { // wrong image format
-                    _print("\n*** ERROR: incorrect image format ! ***\n\n");
-                    ok = false;
-                    }
-                if (res_RDSELFDIAG != ILI9341_T4_SELFDIAG_OK)
-                    { // wrong self diagnotic value
-                    _print("\n*** ERROR: incorrect self-diagnotic value ! ***\n\n");
-                    ok = false;
-                    }
+                _print("\nThe MISO line is not connected: cannot query the screen status...\n");
                 }
             if (ok)
                 {
@@ -399,6 +437,7 @@ namespace ILI9341_T4
         {
         _waitUpdateAsyncComplete();
         resync();
+        if (_miso == 255) return 0; // return 0 
         return _readcommand8(ILI9341_T4_RDSELFDIAG);
         }
 
@@ -407,23 +446,28 @@ namespace ILI9341_T4
         {
         _waitUpdateAsyncComplete();
         _print("---------------- ILI9341Driver Status-----------------\n");
-        uint8_t x = _readcommand8(ILI9341_T4_RDMODE);
-        _print("- Display Power Mode  : 0x"); _println(x, HEX);
-        x = _readcommand8(ILI9341_T4_RDMADCTL);
-        _print("- MADCTL Mode         : 0x"); _println(x, HEX);
-        x = _readcommand8(ILI9341_T4_RDPIXFMT);
-        _print("- Pixel Format        : 0x"); _println(x, HEX);
-        x = _readcommand8(ILI9341_T4_RDIMGFMT);
-        _print("- Image Format        : 0x"); _println(x, HEX);
-        x = _readcommand8(ILI9341_T4_RDSGNMODE);
-        _print("- Display Signal Mode : 0x"); _println(x, HEX);       
-        x = _readcommand8(ILI9341_T4_RDSELFDIAG); 
-        _print("- Self Diagnostic     : 0x"); _print(x, HEX);
-        if (x == ILI9341_T4_SELFDIAG_OK) _println(" [OK].\n"); else _println(" [ERROR].\n");
+        if (_miso == 255)
+            {
+            _print("\n*** MISO pin not connected to display: screen status cannot be queried ***\n\n");
+            }
+        else
+            {
+            uint8_t x = _readcommand8(ILI9341_T4_RDMODE);
+            _print("- Display Power Mode  : 0x"); _println(x, HEX);
+            x = _readcommand8(ILI9341_T4_RDMADCTL);
+            _print("- MADCTL Mode         : 0x"); _println(x, HEX);
+            x = _readcommand8(ILI9341_T4_RDPIXFMT);
+            _print("- Pixel Format        : 0x"); _println(x, HEX);
+            x = _readcommand8(ILI9341_T4_RDIMGFMT);
+            _print("- Image Format        : 0x"); _println(x, HEX);
+            x = _readcommand8(ILI9341_T4_RDSGNMODE);
+            _print("- Display Signal Mode : 0x"); _println(x, HEX);
+            x = _readcommand8(ILI9341_T4_RDSELFDIAG);
+            _print("- Self Diagnostic     : 0x"); _print(x, HEX);
+            if (x == ILI9341_T4_SELFDIAG_OK) _println(" [OK].\n"); else _println(" [ERROR].\n");
+            }
         resync();
         }
-
-
 
 
     FLASHMEM void ILI9341Driver::setSpiClock(int spi_clock)
@@ -603,11 +647,15 @@ namespace ILI9341_T4
         {
         const int om = getRefreshMode();
         _print("------------ ILI9341Driver Refresh Modes -------------\n");
+        if (_miso == 255)
+            {
+            _print("*** WARNING The values displayed below are 'typical values' because exact rates cannot be queried since PIN_MISO=255 ***\n");
+            }
         for(int m = 0; m <= 31; m++)
             {
             setRefreshMode(m);
             float r = getRefreshRate();
-            _printf("- mode %u : %fHz (%u FPS with vsync_spacing = 2).\n", m, r, (uint32_t)round(r/2));
+            if (_miso == 255) _printf("- mode %u : %fHz\n", m, r); else _printf("- mode %u : %fHz (%u FPS with vsync_spacing = 2).\n", m, r, (uint32_t)round(r/2));
             }
         _println("");
         setRefreshMode(om);
@@ -617,7 +665,8 @@ namespace ILI9341_T4
     /** return the current scanline in [0, 319]. Sync with SPI only if required */
     int ILI9341Driver::_getScanLine(bool sync)
         {
-        if (!sync)
+        if (_miso == 255) { _print("***  WARNING: _getScanLine called while MISO_PIN=255 ***\n"); }
+        if ((!sync)||(_miso==255))
             {
             return ( _synced_scanline + ((((uint64_t)_synced_em)* ILI9341_T4_NB_SCANLINES) / _period) ) % ILI9341_T4_NB_SCANLINES;
             }
@@ -657,6 +706,12 @@ namespace ILI9341_T4
 
     void ILI9341Driver::_sampleRefreshRate()
         {
+        if (_miso == 255)
+            { // hack when MISO line not connected: approximate...
+            _period = (uint32_t)round(1000000.0f / ILI9341_T4_refresh_rates[_refreshmode]);
+            return;
+            }
+
         const int NB_SAMPLE_FRAMES = 10;
         elapsedMicros em = 0; // start counter 
         // wait to reach scanline 0
@@ -741,6 +796,14 @@ namespace ILI9341_T4
 
     FLASHMEM void ILI9341Driver::setVSyncSpacing(int vsync_spacing)
         {
+        if (_miso == 255)
+            {
+            if (vsync_spacing > 0)
+                {// cannot use vsync if MISO line not set. 
+                _printf("*** WARNING: setVSyncSpacing(%d) called while PIN_MISO=255, reverting to vsync_spacing = 0 ***\n", vsync_spacing);
+                vsync_spacing = 0; 
+                }
+            }
         _waitUpdateAsyncComplete();
         _vsync_spacing = ILI9341Driver::_clip<int>((int)vsync_spacing, (int)-1, (int)ILI9341_T4_MAX_VSYNC_SPACING);
         statsReset();
@@ -1695,7 +1758,11 @@ namespace ILI9341_T4
     uint8_t ILI9341Driver::_readcommand8(uint8_t c, uint8_t index, int timeout_ms)
         {
         // Bail if not valid miso
-        if (_miso == 0xff) return 0;        
+        if (_miso == 255)
+            {
+            _print("*** WARNING: _readcommand8() called while MISO=255 ***\n");
+            return 0;
+            }
         uint8_t r = 0;
         _beginSPITransaction(_spi_clock_read);
         // Lets assume that queues are empty as we just started transaction.
@@ -2241,9 +2308,32 @@ namespace ILI9341_T4
             {
             //_waitUpdateAsyncComplete();
             _print("----------------- ILI9341Driver Stats ----------------\n");
-            _print("[Configuration]\n");
+
+            _print("[Hardware]\n");
+            _printf("- SPI BUS            : SPI%u [MOSI=%u , MISO=%u, SCK=%u, CS=%u]\n", _spi_num, _mosi, _miso, _sclk, _cs );
+            _printf("- DC pin             : %u ", _dc);
+            if (_hardware_dc)
+                {
+                _printf(" *** Hardware acceleration enabled ***\n", _dc);
+                }
+            else
+                {
+                _printf("\n", _dc);
+                }
             _printf("- SPI speed          : write=%u  read=%u\n", _spi_clock, _spi_clock_read);
             _printf("- IRQ priority       : %d\n", _irq_priority);
+
+            _print( "- XPT2046 Touchscreen: ");
+            if (_touch_cs == 255)
+                {
+                _print("not connected\n");
+                }
+            else
+                {
+                _printf("enabled [TOUCH_CS=%u, TOUCH_IRQ=%u]\n", _touch_cs, _touch_irq);
+                }
+
+            _print("\n[Configuration]\n");
             _print("- screen orientation : ");
             switch (getRotation())
                 {
@@ -2262,10 +2352,17 @@ namespace ILI9341_T4
                 case DOUBLE_BUFFERING: _print(" (DOUBLE BUFFERING)\n"); break;
                 }
             _printf("- vsync_spacing      : %i ", _vsync_spacing);
-            if (_vsync_spacing <= 0)
-                _print(" (VSYNC DISABLED).\n");
+            if (_miso == 255)
+                {
+                _print(" (VSYNC ALWAYS DISABLED BECAUSE MISO_PIN=255).\n");
+                }
             else
-                _print(" (VSYNC ENABLED).\n");
+                {
+                if (_vsync_spacing <= 0)
+                    _print(" (VSYNC DISABLED).\n");
+                else
+                    _print(" (VSYNC ENABLED).\n");
+                }
 
             _print("- requested FPS      : ");
             if (_vsync_spacing == -1)
@@ -2433,31 +2530,34 @@ namespace ILI9341_T4
 
     void ILI9341Driver::_updateTouch2()
         {
-        int16_t data[6];
-        int z;
-        _pspi->beginTransaction(SPISettings(_spi_clock_read, MSBFIRST, SPI_MODE0));
-        digitalWrite(_touch_cs, LOW);
-        _pspi->transfer(0xB1);
-        int16_t z1 = _pspi->transfer16(0xC1 /* Z2 */) >> 3;
-        z = z1 + 4095;
-        int16_t z2 = _pspi->transfer16(0x91 /* X */) >> 3;
-        z -= z2;
-        if (z >= _touch_z_threshold)
+        int16_t data[6] = { 0,0,0,0,0,0};
+        int z = 0;
+
+        if (_touch_cs != 255)
             {
-            _pspi->transfer16(0x91 /* X */);  // dummy X measure, 1st is always noisy
-            data[0] = _pspi->transfer16(0xD1 /* Y */) >> 3;
-            data[1] = _pspi->transfer16(0x91 /* X */) >> 3; // make 3 x-y measurements
-            data[2] = _pspi->transfer16(0xD1 /* Y */) >> 3;
-            data[3] = _pspi->transfer16(0x91 /* X */) >> 3;
+            _pspi->beginTransaction(SPISettings(_spi_clock_read, MSBFIRST, SPI_MODE0));
+            digitalWrite(_touch_cs, LOW);
+            _pspi->transfer(0xB1);
+            int16_t z1 = _pspi->transfer16(0xC1 /* Z2 */) >> 3;
+            z = z1 + 4095;
+            int16_t z2 = _pspi->transfer16(0x91 /* X */) >> 3;
+            z -= z2;
+            if (z >= _touch_z_threshold)
+                {
+                _pspi->transfer16(0x91 /* X */);  // dummy X measure, 1st is always noisy
+                data[0] = _pspi->transfer16(0xD1 /* Y */) >> 3;
+                data[1] = _pspi->transfer16(0x91 /* X */) >> 3; // make 3 x-y measurements
+                data[2] = _pspi->transfer16(0xD1 /* Y */) >> 3;
+                data[3] = _pspi->transfer16(0x91 /* X */) >> 3;
+                } else
+                {
+                data[0] = data[1] = data[2] = data[3] = 0;  // Compiler warns these values may be used unset on early exit.
+                }
+            data[4] = _pspi->transfer16(0xD0 /* Y */) >> 3; // Last Y touch power down
+            data[5] = _pspi->transfer16(0) >> 3;
+            digitalWrite(_touch_cs, HIGH);
+            _pspi->endTransaction();
             }
-        else
-            {
-            data[0] = data[1] = data[2] = data[3] = 0;  // Compiler warns these values may be used unset on early exit.
-            }
-        data[4] = _pspi->transfer16(0xD0 /* Y */) >> 3; // Last Y touch power down
-        data[5] = _pspi->transfer16(0) >> 3;
-        digitalWrite(_touch_cs, HIGH);
-        _pspi->endTransaction();
 
         if (z < _touch_z_threshold)
             {
@@ -2499,6 +2599,7 @@ namespace ILI9341_T4
 
     FLASHMEM bool ILI9341Driver::readTouch(int& x, int& y, int& z)
         {
+        if (_touch_cs == 255) return false; // touchscreen is not configured. 
         _updateTouch();
         if (_touch_z < _touch_z_threshold) return false;
         z = _touch_z;
@@ -2636,6 +2737,12 @@ namespace ILI9341_T4
 
     FLASHMEM void ILI9341Driver::calibrateTouch(int touchCalibration[4])
         {
+        if (_touch_cs == 255)
+            {
+            _print("\nERROR: Called calibrateTouch() but touchscreen not connected... Aborting.\n\n");
+            return;
+            }
+
         _waitUpdateAsyncComplete();
 
         int oldrot = getRotation(); 

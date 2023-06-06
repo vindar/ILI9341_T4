@@ -86,7 +86,7 @@ namespace ILI9341_T4
 #define ILI9341_T4_DEFAULT_SPICLOCK 30000000         // default SPI write speed, some display can work up to 80Mhz...
 #define ILI9341_T4_DEFAULT_SPICLOCK_READ 4000000     // default SPI read speed (much slower then write speed)
 
-#define ILI9341_T4_DEFAULT_VSYNC_SPACING 2           // vsync on with framerate = refreshrate/2 = 45FPS. 
+#define ILI9341_T4_DEFAULT_VSYNC_SPACING 0           // No VSync/Screen tearing protection by default.  
 #define ILI9341_T4_DEFAULT_DIFF_GAP 6                // default gap for diffs (typ. between 4 and 50)
 #define ILI9341_T4_DEFAULT_LATE_START_RATIO 0.3f     // default "proportion" of the frame admissible for late frame start when using vsync. 
 
@@ -254,10 +254,12 @@ public:
     *
     * - miso: Pin connected to the SDO(MISO) pin on the display. Mandatory.   
     *         Must be a hardware MISO pin for the SPI bus used on the Teensy.
+    *         -> The MISO pin can be left unconnected (by setting it to 255) but in this case VSync (screen tearing protection)
+    *            is disabled and the screen status and refresh rates cannot be queried...
     *
     * - rst:  Pin connected to the RESET pin on the display. Optional but recommended.   
     *         -> if not connected to the teensy, set rst=255 and do not forget the pull 
-    *         the RST pin to +33V the display
+    *         the RST pin to +3.3V the display
     * 
     * If the screen has an XPT2046 touchscreen ON THE SAME SPI BUS:
     * 
@@ -267,12 +269,12 @@ public:
     * - touch_irq: Pin connected to the T_IRQ pin on the display. Optional. 
     *              Can be any digital pin.
     *              
-    *  --> When using the touchscreen, the T_CLK, T_DIN and T_DO pin fron the screen must be connected
-    *      to the same pin as SCK, SDI and SDO  (i.e. the screen and touchscreen share the same SPI bus)
+    *  --> When using the touchscreen (with this driver), the T_CLK, T_DIN and T_DO pin from the screen 
+    *      must be connected to the same pin as SCK, SDI and SDO  (i.e. the screen and touchscreen share the same SPI bus)
     *      
     * --------------------------------------------------------------------------------------------
     * THE SPI BUS SHOULD BE DEDICATED TO THE SCREEN (AND POSSIBLY THE XPT2046 TOUCHSCREEN)
-    * DO NOT CONNECT ANY OTHER DEVICE ONT THAT SPI BUS !!!
+    * DO NOT CONNECT ANY OTHER DEVICE ON THAT SPI BUS !!!
     * --------------------------------------------------------------------------------------------
     * 
     **/
@@ -316,6 +318,8 @@ public:
     * Query the value of the self-diagnostic register.
     * 
     * Should return ILI9341_T4_SELFDIAG_OK = 0xC0 if everything is fine.
+    * 
+    * Returns 0 if the MISO line is not connected (PIN_MISO=255) and the screen cannot be queried.
     **/
     int selfDiagStatus();
 
@@ -498,7 +502,7 @@ public:
     *
     * Screen refresh rate. 
     * 
-    * -> these methods are used to set the screen refresh rate (number of time the display is refreshed 
+    * -> these methods are used to set the screen refresh rate (number of times the display is refreshed 
     *    per second). This rate is important because it is related to the actual framerate via the 
     *    vsync_spacing parameter (c.f. the vsync setting section). 
     *
@@ -541,6 +545,9 @@ public:
     * from display to display. 
     *
     * Remark: calling this method resets the statistics.
+    *
+    * Remark: If PIN_MISO=255, the exact refresh rates of the display cannot be queried and
+    *         values for a 'typical' ILI9341 display are used instead.
     **/
     void setRefreshRate(float refreshrate_hz);
 
@@ -548,6 +555,9 @@ public:
     /**
     * Get the refresh rate of the display (in Hz) corresponding to the current
     * refresh mode set.
+    * 
+    * Remark: If PIN_MISO=255, the exact refresh rate cannot be queried and the returned value 
+    *         is the average refresh rate of the current mode for a 'typical' ILI9341 display.. 
     **/
     float getRefreshRate() const { return (_period == 0) ? 0.0f : 1000000.0f / _period; }
 
@@ -559,6 +569,9 @@ public:
     * 
     * This method is will take a few seconds as its cycles through all the modes
     * and must sample the exact refresh rate each time.
+    * 
+    * Remark: If PIN_MISO=255, the real refresh rates cannot be queried and the displayed values are 
+    *         those of a 'typical' ILI9341 display..
     **/
     void printRefreshMode();
 
@@ -624,6 +637,9 @@ public:
     *          TO GET A CONSISTENT FRAMERATE WITHOUT SCREEN TEARING
     * 
     * Remark: calling this method resets the statistics.
+    * 
+    * Remark: If PIN_MISO=255, then VSync spacing cannot be enalbed and therefore it will revert to 
+    *         vsync_spacing = 0 (or -1 if requested)
     **/
     void setVSyncSpacing(int vsync_spacing = ILI9341_T4_DEFAULT_VSYNC_SPACING);
 
@@ -1403,6 +1419,7 @@ private:
 
     template<typename T1, typename T2, typename T3, typename T4> void _printf(const char * str, const T1 & a, const T2 & b, const T3 & c, const T4 & d) const { if (_outputStream) _outputStream->printf(str, a,b,c,d); }
 
+    template<typename T1, typename T2, typename T3, typename T4, typename T5> void _printf(const char* str, const T1& a, const T2& b, const T3& c, const T4& d, const T5& e) const { if (_outputStream) _outputStream->printf(str, a, b, c, d, e); }
 
 
     /**********************************************************************************************************
