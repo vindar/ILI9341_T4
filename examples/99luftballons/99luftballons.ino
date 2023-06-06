@@ -12,7 +12,7 @@
 // DEFAULT WIRING USING SPI 0 ON TEENSY 4/4.1
 //
 #define PIN_SCK     13      // mandatory
-#define PIN_MISO    12      // mandatory
+#define PIN_MISO    12      // mandatory (if the display has no MISO line, set this to 255 but then VSync will be disabled)
 #define PIN_MOSI    11      // mandatory
 #define PIN_DC      10      // mandatory, can be any pin but using pin 10 (or 36 or 37 on T4.1) provides greater performance
 
@@ -27,7 +27,7 @@
 // ALTERNATE WIRING USING SPI 1 ON TEENSY 4/4.1 
 //
 //#define PIN_SCK     27      // mandatory 
-//#define PIN_MISO    1       // mandatory
+//#define PIN_MISO    1       // mandatory  (if the display has no MISO line, set this to 255 but then VSync will be disabled)
 //#define PIN_MOSI    26      // mandatory
 //#define PIN_DC      0       // mandatory, can be any pin but using pin 0 (or 38 on T4.1) provides greater performance
 
@@ -204,8 +204,6 @@ void loop()
     if (++nbf % 2000 == 500)
         { // prints stats every 2000 frames. 
         tft.printStats();
-        diff1.printStats();
-        diff2.printStats();
         }
     }
 

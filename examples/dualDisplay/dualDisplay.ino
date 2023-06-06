@@ -16,7 +16,7 @@
 // FIRST SCREEN IS WIRED TO SPI0 
 //
 #define PIN_SCK0        13  // mandatory 
-#define PIN_MISO0       12  // mandatory
+#define PIN_MISO0       12  // mandatory  (if the display has no MISO line, set this to 255 but then VSync will be disabled)
 #define PIN_MOSI0       11  // mandatory
 #define PIN_DC0         10  // mandatory, can be any pin but using pin 10 (or 36 or 37 on T4.1) provides greater performance
 
@@ -31,7 +31,7 @@
 // SECOND SCREEN IS WIRED TO SPI1 
 //
 #define PIN_SCK1        27  // mandatory 
-#define PIN_MISO1        1  // mandatory
+#define PIN_MISO1        1  // mandatory  (if the display has no MISO line, set this to 255 but then VSync will be disabled)
 #define PIN_MOSI1       26  // mandatory
 #define PIN_DC1          0  // mandatory, can be any pin but using pin 0 (or 38 on T4.1) provides greater performance
 
