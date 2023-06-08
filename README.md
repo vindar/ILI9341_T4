@@ -50,17 +50,18 @@ VCC |  | | power from +3.6V to +5.5V
 GND |  | | connects to ground, obviously
 CS  | PIN 9 | PIN 30 | Optional (but recommended). Any digital pin will do, 255 if not connected
 RESET | PIN 6 | PIN29 | Optional (but recommended). Any digital pin will do, 255 if not connected
-DC | PIN 10 | PIN 0 |  Mandatory. Any pin will do but choose a CS capable pin whenever possible !
-SDI (MOSI) | PIN 11 | PIN 26| Mandatory
-SCK | PIN 13 | PIN27 | Mandatory
+DC | PIN 10 | PIN 0 |  Mandatory. Any pin will do but choose a CS capable pin whenever possible
+SDI (MOSI) | PIN 11 | PIN 26| Mandatory. Must be a MOSI hardware pin 
+SCK | PIN 13 | PIN27 | Mandatory. Must be a SCK hardware pin 
 LED | | | connect to +3.3V through a small resistor (50 Ohm)
-SDO (MISO) | PIN 12 | PIN 1 |  Mandatory to unlock all the driver features (if the screen has no MISO line, set this to 255)
+SDO (MISO) | PIN 12 | PIN 1 |  Required to unlock all the driver features (but if the screen has no MISO line, then set this to 255)
 
 **Remarks**
 - If CS = 255, do not forget to connect the CS pin from the display (if present) to GND.
 - If RST = 255, do not forget to connect the RST pin from the display to 3.3V 
-- Only set MISO = 255 if you really do not have acesss to the MISO line... Without it, the driver cannot query the screen status/scanline and will therefore operate without vsync (but diff. updates will still be available).
- 
+- If MISO = 255, then the driver cannot query the screen status/scanline and will therefore operate without vsync (but diff. updates will still be available).
+- **Do not connect any other device (apart from the optional XPT4046 touchscreen) on the same SPI bus**.
+
 ### 1. Installing/Including the library 
 
 The library can be installed directly from Arduino's or PlatformIO's library manager (search for ILI9341_T4). Alternatively, one can simply copy this git repository into arduino's `/libraries` subfolder. 
