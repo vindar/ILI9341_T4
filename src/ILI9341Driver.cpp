@@ -674,7 +674,7 @@ namespace ILI9341_T4
         _beginSPITransaction(_spi_clock_read);
 
         _maybeUpdateTCR(_tcr_dc_assert | LPSPI_TCR_FRAMESZ(7));
-        _pimxrt_spi->TDR = 0x45; // send command
+        _pimxrt_spi->TDR = ILI9341_T4_GSLINE; // send command
         _pimxrt_spi->TCR = _spi_tcr_current;
         while ((_pimxrt_spi->FSR & 0x1f)); // make sure command has been sent
         delayMicroseconds(3); // wait as requeted per manual
@@ -697,7 +697,7 @@ namespace ILI9341_T4
         val = _pimxrt_spi->RDR; // Read pending RX bytes
 
         _synced_em = 0;
-        _synced_scanline = (val > 319) ? 0 : val;  // save the scanline
+        _synced_scanline = (val > ILI9341_T4_TFTHEIGHT - 1) ? 0 : val;  // save the scanline
 
         _endSPITransaction();
         return _synced_scanline;
