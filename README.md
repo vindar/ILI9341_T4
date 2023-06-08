@@ -51,15 +51,16 @@ GND |  | | connects to ground, obviously
 CS  | PIN 9 | PIN 30 | Optional (but recommended). Any digital pin will do, 255 if not connected
 RESET | PIN 6 | PIN29 | Optional (but recommended). Any digital pin will do, 255 if not connected
 DC | PIN 10 | PIN 0 |  Mandatory. Any pin will do but choose a CS capable pin whenever possible !
-SDI (MOSI) | PIN 11 | PIN 26| Mandatory.
+SDI (MOSI) | PIN 11 | PIN 26| Mandatory
 SCK | PIN 13 | PIN27 | Mandatory
 LED | | | connect to +3.3V through a small resistor (50 Ohm)
-SDO (MISO) | PIN 12 | PIN 1 |  Mandatory
+SDO (MISO) | PIN 12 | PIN 1 |  Mandatory to unlock all the driver features (if the screen has no MISO line, set this to 255)
 
 **Remarks**
 - If CS = 255, do not forget to connect the CS pin from the display (if present) to GND.
 - If RST = 255, do not forget to connect the RST pin from the display to 3.3V 
-
+- Only set MISO = 255 if you really do not have acesss to the MISO line... Without it, the driver cannot query the screen status/scanline and will therefore operate without vsync (but diff. updates will still be available).
+ 
 ### 1. Installing/Including the library 
 
 The library can be installed directly from Arduino's or PlatformIO's library manager (search for ILI9341_T4). Alternatively, one can simply copy this git repository into arduino's `/libraries` subfolder. 
@@ -281,7 +282,7 @@ ILI9341 SCREEN | TEENSY 4/4.1
 `T_DO` | same pin on the Teensy as `SDO (MISO)`
 `T_IRQ` | (optional) any available digital pin
 
-- **Last but not least: drawing things on the frame buffer**. The library itself provides not drawing primitive. It simply pushes/mirror a memory frame buffer onto the screen. You can draw on the framebuffer directly 'by hand' or use any library you wish to do so...  If you want a lightweight, fast, full featured 2D and 3D graphics library optimized for microcontrollers, you should check out my <a href="https://github.com/vindar/tgx">tgx library</a> :smiley:. If you want to create a GUI, you can use the powerful <a href="https://github.com/lvgl/lvgl">LVGL library</a>. It can be easily combined with ILI9341, c.f.  [this example](https://github.com/vindar/ILI9341_T4/tree/main/examples/lvgl_touch_minimal) and [this one](https://github.com/vindar/ILI9341_T4/tree/main/examples/lvgl_music_demo).
+- **Last but not least: drawing things on the frame buffer**. The library itself provides no drawing primitive. It simply pushes/mirror a memory frame buffer onto the screen. You can draw on the framebuffer directly 'by hand' or use any library you wish to do so...  If you want a lightweight, fast, full featured 2D and 3D graphics library optimized for microcontrollers, you should check out my <a href="https://github.com/vindar/tgx">tgx library</a> :smiley:. If you want to create a GUI, you can use the powerful <a href="https://github.com/lvgl/lvgl">LVGL library</a>. It can be easily combined with ILI9341, c.f.  [this example](https://github.com/vindar/ILI9341_T4/tree/main/examples/lvgl_touch_minimal) and [this one](https://github.com/vindar/ILI9341_T4/tree/main/examples/lvgl_music_demo).
 
 
 ## Credits
