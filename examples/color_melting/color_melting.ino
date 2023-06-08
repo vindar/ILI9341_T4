@@ -19,7 +19,7 @@
 // DEFAULT WIRING USING SPI 0 ON TEENSY 4/4.1
 //
 #define PIN_SCK     13      // mandatory
-#define PIN_MISO    12      // mandatory  (if the display has no MISO line, set this to 255 but then VSync will be disabled)
+#define PIN_MISO    12      // mandatory  (if the display has no MISO line, set this to 255 but then VSync will be disabled...)
 #define PIN_MOSI    11      // mandatory
 #define PIN_DC      10      // mandatory, can be any pin but using pin 10 (or 36 or 37 on T4.1) provides greater performance
 
@@ -118,6 +118,7 @@ elapsedMillis em;
 bool vsync;
 bool c = 0; 
 
+bool can_do_vsync; 
 
 void setup()
     {
@@ -137,6 +138,10 @@ void setup()
         }
 
     tft.setRefreshRate(90);  // start with a screen refresh rate around 40hz
+
+    tft.setVSyncSpacing(1);  // enable vsync
+    can_do_vsync = (tft.getVSyncSpacing() > 0); // check that if it is really enabled.
+    
     tft.setVSyncSpacing(0);  // disable vsync => create screen tearing :-(
 
     em = 0; 
@@ -166,13 +171,21 @@ void loop()
     tft.overlayFPS(fb); // draw the FPS counter on the top left, in red on a semi-transparent white background
     tft.overlayText(fb, "Color melting demo\nDrawing red / blue circle alternatively...", 2, 0, 14, ILI9341_T4_COLOR_BLACK, 1.0f, ILI9341_T4_COLOR_BLUE, 0.4f, 1);
 
-    if (vsync)
+    if (!can_do_vsync)
         {
-        tft.overlayText(fb, "VSync ON", 3, 0, 16, ILI9341_T4_COLOR_GREEN, 1.0f, ILI9341_T4_COLOR_BLACK, 0.5f);    
+        tft.overlayText(fb, "*** VSYNC DISABLED ***", 3, 0, 16, ILI9341_T4_COLOR_RED, 1.0f, ILI9341_T4_COLOR_BLACK, 0.5f);                
+        tft.overlayText(fb, "Connect the MISO pin to activate this feature...", 3, 2, 12, ILI9341_T4_COLOR_RED, 1.0f, ILI9341_T4_COLOR_BLACK, 0.5f);                
         }
     else 
         {
-        tft.overlayText(fb, "VSync OFF", 3, 0, 16, ILI9341_T4_COLOR_RED, 1.0f, ILI9341_T4_COLOR_BLACK, 0.5f);    
+        if (tft.getVSyncSpacing() > 0)
+            {
+            tft.overlayText(fb, "VSync ON", 3, 0, 16, ILI9341_T4_COLOR_GREEN, 1.0f, ILI9341_T4_COLOR_BLACK, 0.5f);    
+            }
+        else 
+            {
+            tft.overlayText(fb, "VSync OFF", 3, 0, 16, ILI9341_T4_COLOR_RED, 1.0f, ILI9341_T4_COLOR_BLACK, 0.5f);    
+            }
         }
     
     tft.update(fb); // push the framebuffer to be displayed
