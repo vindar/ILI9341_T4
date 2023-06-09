@@ -109,72 +109,10 @@ namespace ILI9341_T4
 
 #define ILI9341_T4_SELFDIAG_OK 0xC0                 // value returned by selfDiagStatus() if everything is OK.
 
-#define ILI9441_T4_DEFAULT_FPS_COUNTER_COLOR_FG ILI9341_T4_COLOR_WHITE  // default values (color/opacity/position)
-#define ILI9441_T4_DEFAULT_FPS_COUNTER_COLOR_BG ILI9341_T4_COLOR_BLUE   // for the FPS counter
-#define ILI9441_T4_DEFAULT_FPS_COUNTER_OPACITY 0.5f                     // 
-#define ILI9441_T4_DEFAULT_FPS_COUNTER_POSITION 0                       //
-
-
-/** ILI9341 command codes */
-
-#define ILI9341_T4_NOP 0x00
-#define ILI9341_T4_SWRESET 0x01
-#define ILI9341_T4_RDDID 0x04
-#define ILI9341_T4_RDDST 0x09
-
-#define ILI9341_T4_SLPIN 0x10
-#define ILI9341_T4_SLPOUT 0x11
-#define ILI9341_T4_PTLON 0x12
-#define ILI9341_T4_NORON 0x13
-
-#define ILI9341_T4_RDMODE 0x0A
-#define ILI9341_T4_RDMADCTL 0x0B
-#define ILI9341_T4_RDPIXFMT 0x0C
-#define ILI9341_T4_RDIMGFMT 0x0D
-#define ILI9341_T4_RDSGNMODE 0x0E
-#define ILI9341_T4_RDSELFDIAG 0x0F
-
-#define ILI9341_T4_INVOFF 0x20
-#define ILI9341_T4_INVON 0x21
-#define ILI9341_T4_GAMMASET 0x26
-#define ILI9341_T4_DISPOFF 0x28
-#define ILI9341_T4_DISPON 0x29
-
-#define ILI9341_T4_CASET 0x2A
-#define ILI9341_T4_PASET 0x2B
-#define ILI9341_T4_RAMWR 0x2C
-#define ILI9341_T4_RAMRD 0x2E
-
-#define ILI9341_T4_PTLAR 0x30
-#define ILI9341_T4_MADCTL 0x36
-#define ILI9341_T4_VSCRSADD 0x37
-#define ILI9341_T4_PIXFMT 0x3A
-
-#define ILI9341_T4_GSLINE 0x45
-
-#define ILI9341_T4_FRMCTR1 0xB1
-#define ILI9341_T4_FRMCTR2 0xB2
-#define ILI9341_T4_FRMCTR3 0xB3
-#define ILI9341_T4_INVCTR 0xB4
-#define ILI9341_T4_DFUNCTR 0xB6
-
-#define ILI9341_T4_PWCTR1 0xC0
-#define ILI9341_T4_PWCTR2 0xC1
-#define ILI9341_T4_PWCTR3 0xC2
-#define ILI9341_T4_PWCTR4 0xC3
-#define ILI9341_T4_PWCTR5 0xC4
-#define ILI9341_T4_VMCTR1 0xC5
-#define ILI9341_T4_VMCTR2 0xC7
-
-#define ILI9341_T4_RDID1 0xDA
-#define ILI9341_T4_RDID2 0xDB
-#define ILI9341_T4_RDID3 0xDC
-#define ILI9341_T4_RDID4 0xDD
-
-#define ILI9341_T4_GMCTRP1 0xE0
-#define ILI9341_T4_GMCTRN1 0xE1
-#define ILI9341_T4_PWCTR6  0xFC
-
+#define ILI9341_T4_DEFAULT_FPS_COUNTER_COLOR_FG ILI9341_T4_COLOR_WHITE  // default values (color/opacity/position)
+#define ILI9341_T4_DEFAULT_FPS_COUNTER_COLOR_BG ILI9341_T4_COLOR_BLUE   // for the FPS counter
+#define ILI9341_T4_DEFAULT_FPS_COUNTER_OPACITY 0.5f                     // 
+#define ILI9341_T4_DEFAULT_FPS_COUNTER_POSITION 0                       //
 
 
 #define ILI9341_T4_ALWAYS_INLINE __attribute__((always_inline))
@@ -1107,10 +1045,10 @@ public:
     * - opacity : opacity of the counter between 0.0f=transparent and 1.0f=opaque. 
     **/
     void overlayFPS(uint16_t* fb, 
-                    int position = ILI9441_T4_DEFAULT_FPS_COUNTER_POSITION, 
-                    uint16_t fg_color = ILI9441_T4_DEFAULT_FPS_COUNTER_COLOR_FG, 
-                    uint16_t bg_color = ILI9441_T4_DEFAULT_FPS_COUNTER_COLOR_BG, 
-                    float opacity = ILI9441_T4_DEFAULT_FPS_COUNTER_OPACITY);
+                    int position = ILI9341_T4_DEFAULT_FPS_COUNTER_POSITION, 
+                    uint16_t fg_color = ILI9341_T4_DEFAULT_FPS_COUNTER_COLOR_FG, 
+                    uint16_t bg_color = ILI9341_T4_DEFAULT_FPS_COUNTER_COLOR_BG, 
+                    float opacity = ILI9341_T4_DEFAULT_FPS_COUNTER_OPACITY);
 
 
     /**

@@ -32,6 +32,69 @@ namespace ILI9341_T4
 
 
 
+/** ILI9341 command codes */
+
+#define ILI9341_T4_NOP 0x00
+#define ILI9341_T4_SWRESET 0x01
+#define ILI9341_T4_RDDID 0x04
+#define ILI9341_T4_RDDST 0x09
+
+#define ILI9341_T4_SLPIN 0x10
+#define ILI9341_T4_SLPOUT 0x11
+#define ILI9341_T4_PTLON 0x12
+#define ILI9341_T4_NORON 0x13
+
+#define ILI9341_T4_RDMODE 0x0A
+#define ILI9341_T4_RDMADCTL 0x0B
+#define ILI9341_T4_RDPIXFMT 0x0C
+#define ILI9341_T4_RDIMGFMT 0x0D
+#define ILI9341_T4_RDSGNMODE 0x0E
+#define ILI9341_T4_RDSELFDIAG 0x0F
+
+#define ILI9341_T4_INVOFF 0x20
+#define ILI9341_T4_INVON 0x21
+#define ILI9341_T4_GAMMASET 0x26
+#define ILI9341_T4_DISPOFF 0x28
+#define ILI9341_T4_DISPON 0x29
+
+#define ILI9341_T4_CASET 0x2A
+#define ILI9341_T4_PASET 0x2B
+#define ILI9341_T4_RAMWR 0x2C
+#define ILI9341_T4_RAMRD 0x2E
+
+#define ILI9341_T4_PTLAR 0x30
+#define ILI9341_T4_MADCTL 0x36
+#define ILI9341_T4_VSCRSADD 0x37
+#define ILI9341_T4_PIXFMT 0x3A
+
+#define ILI9341_T4_GSLINE 0x45
+
+#define ILI9341_T4_FRMCTR1 0xB1
+#define ILI9341_T4_FRMCTR2 0xB2
+#define ILI9341_T4_FRMCTR3 0xB3
+#define ILI9341_T4_INVCTR 0xB4
+#define ILI9341_T4_DFUNCTR 0xB6
+
+#define ILI9341_T4_PWCTR1 0xC0
+#define ILI9341_T4_PWCTR2 0xC1
+#define ILI9341_T4_PWCTR3 0xC2
+#define ILI9341_T4_PWCTR4 0xC3
+#define ILI9341_T4_PWCTR5 0xC4
+#define ILI9341_T4_VMCTR1 0xC5
+#define ILI9341_T4_VMCTR2 0xC7
+
+#define ILI9341_T4_RDID1 0xDA
+#define ILI9341_T4_RDID2 0xDB
+#define ILI9341_T4_RDID3 0xDC
+#define ILI9341_T4_RDID4 0xDD
+
+#define ILI9341_T4_GMCTRP1 0xE0
+#define ILI9341_T4_GMCTRN1 0xE1
+#define ILI9341_T4_PWCTR6  0xFC
+
+
+
+
     /* approximation of the real refresh rate for  each mode */
     static const float ILI9341_T4_refresh_rates[] PROGMEM  = { 141.0f,133.0f,126.0f,119.0f,113.0f,108.0f,103.0f,98.0f,
                                                                94.0f,90.0f,87.0f,84.0f,81.0f,78.0f,75.0f,73.0f,
@@ -232,7 +295,52 @@ namespace ILI9341_T4
         // Hack to get hold of the SPI Hardware information...
         uint32_t* pa = (uint32_t*)((void*)_pspi);
         _spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
-        _pspi->begin();
+        
+        //
+        // the next lines replace the command:  _pspi->begin();
+        // but it does not affects the MISO pin (if unused).      
+        // 
+        if (_miso != 255)
+            {
+            _pspi->begin();
+            }
+        else
+            {
+            // same as _pspi->begin() but without setting miso                        
+            int mosi_pin_index = 0;
+            for (unsigned int i = 0; i < sizeof(_spi_hardware->mosi_pin); i++)
+                {
+                if (_mosi == _spi_hardware->mosi_pin[i]) { mosi_pin_index = i; break; }
+                }
+            int sck_pin_index = 0;
+            for (unsigned int i = 0; i < sizeof(_spi_hardware->sck_pin); i++)
+                {
+                if (_sclk == _spi_hardware->sck_pin[i]) { sck_pin_index = i; break; }
+                }
+
+            _spi_hardware->clock_gate_register &= ~_spi_hardware->clock_gate_mask;
+            CCM_CBCMR = (CCM_CBCMR & ~(CCM_CBCMR_LPSPI_PODF_MASK | CCM_CBCMR_LPSPI_CLK_SEL_MASK)) | CCM_CBCMR_LPSPI_PODF(2) | CCM_CBCMR_LPSPI_CLK_SEL(1); // pg 714
+            uint32_t fastio = IOMUXC_PAD_DSE(7) | IOMUXC_PAD_SPEED(2);
+
+            //*(portControlRegister(_spi_hardware->miso_pin[miso_pin_index])) = fastio;
+            *(portControlRegister(_spi_hardware->mosi_pin[mosi_pin_index])) = fastio;
+            *(portControlRegister(_spi_hardware->sck_pin[sck_pin_index])) = fastio;
+
+            _spi_hardware->clock_gate_register |= _spi_hardware->clock_gate_mask;
+            // *(portConfigRegister(_spi_hardware->miso_pin[miso_pin_index])) = _spi_hardware->miso_mux[miso_pin_index];
+            *(portConfigRegister(_spi_hardware->mosi_pin[mosi_pin_index])) = _spi_hardware->mosi_mux[mosi_pin_index];
+            *(portConfigRegister(_spi_hardware->sck_pin[sck_pin_index])) = _spi_hardware->sck_mux[sck_pin_index];
+
+            _spi_hardware->sck_select_input_register = _spi_hardware->sck_select_val[sck_pin_index];
+            // _spi_hardware->miso_select_input_register = _spi_hardware->miso_select_val[miso_pin_index];
+            _spi_hardware->mosi_select_input_register = _spi_hardware->mosi_select_val[mosi_pin_index];
+
+            _pimxrt_spi->CR = LPSPI_CR_RST;
+            _pimxrt_spi->FCR = LPSPI_FCR_TXWATER(15);
+
+            _pspi->beginTransaction(SPISettings());
+            _pspi->endTransaction();
+            }
 
         _pending_rx_count = 0; // Make sure it is zero if we we do a second begin...
 
