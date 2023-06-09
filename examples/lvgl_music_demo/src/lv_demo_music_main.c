@@ -10,9 +10,9 @@
 #if LV_USE_DEMO_MUSIC
 
 #include "lv_demo_music_list.h"
-#include "assets/spectrum_1.h"
-#include "assets/spectrum_2.h"
-#include "assets/spectrum_3.h"
+#include "spectrum_1.h"
+#include "spectrum_2.h"
+#include "spectrum_3.h"
 
 /*********************
  *      DEFINES

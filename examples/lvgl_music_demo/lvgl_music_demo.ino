@@ -48,7 +48,7 @@
 
 #include <lvgl.h> // see the comment above for infos about installing and configuring LVGL. 
 
-#include "src/music/lv_demo_music.h" // the src/music/ folder contain the source code for LVGL music demo. 
+#include "lv_demo_music.h" // the src/music/ folder contain the source code for LVGL music demo. 
 
 
 //
