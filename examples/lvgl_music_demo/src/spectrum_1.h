@@ -1,4 +1,4 @@
-const uint16_t spectrum_1[][4] = {
+const uint16_t spectrum_1[][4] PROGMEM = {
 { 0, 0, 0, 0, },
 { 0, 9, 7, 8, },
 { 5, 39, 24, 29, },

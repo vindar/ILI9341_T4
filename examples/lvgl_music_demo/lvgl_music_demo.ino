@@ -24,8 +24,9 @@
 * -----------------------------------
 *
 * (1) Install the 'lvgl' libraries in Arduino's library folder.
-*     from the github repo: https://github.com/lvgl/lvgl/ directly 
-*     into Arduino's library folder (tested here with LVGL v9.0.0).
+*     from the github repo: https://github.com/lvgl/lvgl/ directly
+*     into Arduino's library folder
+*     !!! This example requires LVGL version 9.2 or later. !!!
 *
 * (2) Copy and rename the file 'libraries/lvgl/lv_conf_template.h' to
 *     'libraries/lv_conf.h' (i.e. put this file directly in Arduino's
@@ -35,10 +36,9 @@
 *
 *     -> Replace '#if 0' by '#if 1'               (at the begining of the file)
 *     -> set #define LV_COLOR_DEPTH 16            (should be already set to the correct value)
-*     -> set #define LV_TICK_CUSTOM 1
-*     -> set #define LV_USE_PERF_MONITOR 1        (if you want to to show the FPS counter)
-*     -> set #define LV_FONT_MONTSERRAT_12  1     (should be already set to the correct value)
-*     -> set #define LV_FONT_MONTSERRAT_14  1
+*     -> set #define LV_DEF_REFR_PERIOD  16       (33FPS, this is to increase it to 60FPS, come on !!!)
+*     -> set #define LV_FONT_MONTSERRAT_12  1
+*     -> set #define LV_FONT_MONTSERRAT_14  1     (should be already set to the correct value)
 *     -> set #define LV_FONT_MONTSERRAT_16  1
 *
 ********************************************************************/
@@ -103,23 +103,44 @@ ILI9341_T4::ILI9341Driver tft(PIN_CS, PIN_DC, PIN_SCK, PIN_MOSI, PIN_MISO, PIN_R
 // number of lines in lvgl's internal draw buffer 
 #define BUF_LY 40
 
-DMAMEM lv_color_t lvgl_buf[LX * BUF_LY]; // memory for lvgl draw buffer, also in DMAMEM (25KB) 
+lv_color_t lvgl_buf[LX * BUF_LY]; // memory for lvgl draw buffer (25KB) 
+
+lv_display_t* disp; // pointer to lvgl display object
+lv_indev_t* indev;  // pointer to lvgl input device object
 
 
-lv_disp_draw_buf_t draw_buf;    // lvgl 'draw buffer' object
-lv_disp_drv_t disp_drv;         // lvgl 'display driver'
-lv_indev_drv_t indev_drv;       // lvgl 'input device driver'
-lv_disp_t* disp;                // pointer to lvgl display object
-
-
-
-/** Callback to draw on the screen */
-void my_disp_flush(lv_disp_drv_t* disp, const lv_area_t* area, lv_color_t* color_p)
+/** LVGL Callback to draw on the screen */
+void my_disp_flush(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map)
     {
     const bool redraw_now = lv_disp_flush_is_last(disp);  // check if when should update the screen (or just buffer the changes). 
-    tft.updateRegion(redraw_now, (uint16_t*)color_p, area->x1, area->x2, area->y1, area->y2); // update the interval framebuffer and then redraw the screen if requested
-    lv_disp_flush_ready(disp); // tell lvgl that we are done and that the lvgl draw buffer can be reused.  
+    tft.updateRegion(redraw_now, (uint16_t*)px_map, area->x1, area->x2, area->y1, area->y2); // update the interval framebuffer and then redraw the screen if requested
+    lv_disp_flush_ready(disp); // tell lvgl that we are done and that the lvgl draw buffer can be reused immediately  
     }
+
+
+/** LVGL Callback to read the touchpad */
+void my_touchpad_read(lv_indev_t* indev, lv_indev_data_t* data)
+    {
+    int touchX, touchY, touchZ;
+    bool touched = tft.readTouch(touchX, touchY, touchZ); // read the touchpad
+    if (!touched)
+        { // nothing
+        data->state = LV_INDEV_STATE_REL;
+        } else
+        { // pressed
+        data->state = LV_INDEV_STATE_PR;
+        data->point.x = touchX;
+        data->point.y = touchY;
+        }
+    }
+
+
+/*use Arduinos millis() as tick source*/
+static uint32_t my_tick(void)
+    {
+    return millis();
+    }
+
 
 
 void setup()
@@ -145,17 +166,15 @@ void setup()
     // ------------------------------
     lv_init();
 
-    // initialize lvgl drawing buffer
-    lv_disp_draw_buf_init(&draw_buf, lvgl_buf, nullptr, LX * BUF_LY);
+    lv_tick_set_cb(my_tick);
 
-    // Initialize lvgl display driver
-    lv_disp_drv_init(&disp_drv);
-    disp_drv.hor_res = LX;
-    disp_drv.ver_res = LY;
-    disp_drv.flush_cb = my_disp_flush;
-    disp_drv.draw_buf = &draw_buf;
-    disp = lv_disp_drv_register(&disp_drv);
-    disp->refr_timer->period = 15; // set refresh rate around 66FPS.  
+    disp = lv_display_create(LX, LY);
+    lv_display_set_flush_cb(disp, my_disp_flush);
+    lv_display_set_buffers(disp, lvgl_buf, nullptr, LX * BUF_LY * sizeof(int16_t), LV_DISPLAY_RENDER_MODE_PARTIAL);
+
+    indev = lv_indev_create();
+    lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER); /*Touchpad should have POINTER type*/
+    lv_indev_set_read_cb(indev, my_touchpad_read);
 
 
     // ------------------------------
@@ -170,7 +189,6 @@ void loop()
     {
 
     lv_task_handler(); // lvgl gui handler    
-
     }
 
 
