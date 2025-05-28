@@ -24,6 +24,12 @@ struct PointF {
 	float y;
 };
 
+
+uint_fast16_t absf16(uint_fast16_t x)
+    {
+    return (x >= 0) ? x : -x;
+    }
+
 uint_fast8_t lerp8( uint_fast8_t a, uint_fast8_t b, float progress ){
 	// Cast to int, avoid horrible values when b-a is less than zero
 	return a + (int_fast8_t)((int_fast8_t)b-(int_fast8_t)a)*progress;
@@ -51,5 +57,6 @@ static uint16_t color565(uint8_t r, uint8_t g, uint8_t b)
 	{
 	return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
 	}
+
 
 #endif

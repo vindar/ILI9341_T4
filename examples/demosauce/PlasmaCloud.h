@@ -94,8 +94,8 @@ void PlasmaCloud::perFrame(ILI9341Wrapper & tft, FrameParams frameParams ) {
 
 	for( uint_fast16_t x=0; x<w; x+=PLASMA_CLOUD_LINE_WIDTH ) {
 		for( uint_fast16_t y=_ditherY; y<h; y+=PLASMA_CLOUD_STEP_Y ) {
-			PointU8 d0 = PointU8{ abs(p0.x - x), abs(p0.y - y) };
-			PointU8 d1 = PointU8{ abs(p1.x - x), abs(p1.y - y) };
+			PointU8 d0 = PointU8{ absf16(p0.x - x), absf16(p0.y - y) };
+			PointU8 d1 = PointU8{ absf16(p1.x - x), absf16(p1.y - y) };
 			//PointU8 d2 = PointU8{ abs(p2.x - x), abs(p2.y - y) };
 
 			uint_fast8_t lookup0 = (d0.x*d0.x + d0.y*d0.y) >> sqrtBitShift;
