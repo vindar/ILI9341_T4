@@ -115,7 +115,7 @@ namespace ILI9341_T4
 #define ILI9341_T4_DEFAULT_FPS_COUNTER_POSITION 0                       //
 
 
-#define ILI9341_T4_ALWAYS_INLINE __attribute__((always_inline))
+//#define ILI9341_T4_ALWAYS_INLINE __attribute__((always_inline))
 
 
 
@@ -1405,7 +1405,7 @@ private:
 
     void _pushRect(uint16_t color, int xmin, int xmax, int ymin, int ymax);
 
-    void _pushpixels(const uint16_t* fb, int x, int y, int len)  ILI9341_T4_ALWAYS_INLINE
+    FLASHMEM void _pushpixels(const uint16_t* fb, int x, int y, int len)  ILI9341_T4_ALWAYS_INLINE
         {
         switch (_rotation)
             {
@@ -1895,7 +1895,7 @@ private:
     uint32_t        _fps_ticks;                 // number of ticks. 
 
 
-    void _startframe(bool vsynonc)
+    FLASHMEM void _startframe(bool vsynonc)
     {
         _stats_nb_uploaded_pixels = 0;
         _stats_nb_transactions = 0;

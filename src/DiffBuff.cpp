@@ -425,7 +425,7 @@ namespace ILI9341_T4
             // we have a valid instruction in _r_x, _r_y, _r_len and _r_cont=true            
             x = _r_x;
             y = _r_y;
-            if ((scanline < DiffBuffBase::LY) && (_r_y + MIN_SCANLINE_SPACE > scanline))
+            if ((scanline >=  _r_y) && (scanline < DiffBuffBase::LY) && (_r_y + MIN_SCANLINE_SPACE > scanline))
                 { // we must wait a bit.
                 len = 0;
                 const int l = _r_y + MIN_SCANLINE_SPACE;
@@ -462,6 +462,39 @@ namespace ILI9341_T4
             _r_y += maxl;
             return 0;
             }
+
+
+        FLASHMEM int DiffBuff::scanlineStartInit()
+            {                       
+            initRead();                
+            while(1)
+                {
+                int nb_skip;
+                int nb_write = _read_encoded(_posr); // number of pixel to write
+                if (nb_write == TAG_END) return -1; // done !
+                if (nb_write == TAG_WRITE_ALL)
+                    { // must write everything
+                    nb_write = DiffBuffBase::LX * DiffBuffBase::LY - _off;
+                    nb_skip = 0;
+                    if (nb_write <= 0) return -1;
+                    }
+                else
+                    {
+                    nb_skip = _read_encoded(_posr);      // number of pixels to skip
+                    }
+                if (nb_write > 0) break;
+                _off += nb_skip;
+                }
+            const int yy = _off / DiffBuffBase::LX;
+            initRead();
+            const int l = yy + MIN_SCANLINE_SPACE;
+            return ((l < DiffBuffBase::LY) ? l : DiffBuffBase::LY);
+            }
+
+
+
+
+
 
 
         FLASHMEM void DiffBuff::computeDiff(uint16_t* fb_old, DiffBuffBase* diff_old, const uint16_t* sub_fb_new, int xmin, int xmax, int ymin, int ymax, int stride,
@@ -814,19 +847,31 @@ namespace ILI9341_T4
                 return 0;
                 }
             int maxl = scanline - _current_line; // number of line available for drawing. 
+            x = 0;
+            y = _current_line;
             if (maxl < MIN_SCANLINE_SPACE)
                 { // we must wait a bit. 
                 const int l = _current_line + MIN_SCANLINE_SPACE;
                 return ((l < _end) ? l : _end);
                 }
-            x = 0;
-            y = _current_line;
             if (maxl > MAX_WRITE_LINE) maxl = MAX_WRITE_LINE; // not too much lines at once
             len = maxl * DiffBuffBase::LX;
             _current_line += maxl;
             return 0;
             }
 
+
+        FLASHMEM int DiffBuffDummy::scanlineStartInit()
+            {
+            initRead();
+            if (_current_line >= _end) return -1; // we are done. 
+            //if (scanline >= _end)
+            //    { // scanline after end of drawing, go as fast as possible. 
+            //    return scanline; // we can run now
+            //    }
+            const int l = _current_line + MIN_SCANLINE_SPACE;            
+            return ((l < _end) ? l : _end);
+            }
 
 
 

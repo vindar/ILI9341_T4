@@ -771,7 +771,7 @@ namespace ILI9341_T4
 
 
     /** return the current scanline in [0, 319]. Sync with SPI only if required */
-    int ILI9341Driver::_getScanLine(bool sync)
+    FLASHMEM int ILI9341Driver::_getScanLine(bool sync)
         {
         if (_miso == 255) { _print("***  WARNING: _getScanLine called while MISO_PIN=255 ***\n"); }
         if ((!sync)||(_miso==255))
@@ -812,7 +812,7 @@ namespace ILI9341_T4
         }
 
 
-    void ILI9341Driver::_sampleRefreshRate()
+    FLASHMEM void ILI9341Driver::_sampleRefreshRate()
         {
         if (_miso == 255)
             { // hack when MISO line not connected: approximate...
@@ -867,7 +867,7 @@ namespace ILI9341_T4
         }
 
 
-    float ILI9341Driver::_refreshRateForMode(int mode) const
+    FLASHMEM float ILI9341Driver::_refreshRateForMode(int mode) const
         { 
         float freq = 1000000.0f / _period_mode0;
         if (mode >= 16)
@@ -879,7 +879,7 @@ namespace ILI9341_T4
         }
 
 
-    int ILI9341Driver::_modeForRefreshRate(float hz) const
+    FLASHMEM int ILI9341Driver::_modeForRefreshRate(float hz) const
         {
         if (hz <= _refreshRateForMode(31)) return 31;
         if (hz >= _refreshRateForMode(0)) return 0;
@@ -1140,6 +1140,8 @@ namespace ILI9341_T4
 
     FLASHMEM void ILI9341Driver::update(const uint16_t* fb, bool force_full_redraw)
         {
+         
+        
         if (fb == nullptr) return;
 
         if (fb == _fb1)
@@ -1155,7 +1157,7 @@ namespace ILI9341_T4
             {
             case NO_BUFFERING:
                 {
-                _waitUpdateAsyncComplete(); // wait until update is done (normally useless but still). 
+                _waitUpdateAsyncComplete(); // wait until update is done (normally useless but still).                 
                 _mirrorfb = nullptr;
                 _dummydiff1->computeDummyDiff(); 
                 _updateNow(fb, _dummydiff1);
@@ -1219,14 +1221,14 @@ namespace ILI9341_T4
 
 
 
-    void  ILI9341Driver::_pushpixels_mode0(const uint16_t* fb, int x, int y, int len)
+    FLASHMEM void  ILI9341Driver::_pushpixels_mode0(const uint16_t* fb, int x, int y, int len)
         {
         const uint16_t* p = fb + x + (y * ILI9341_T4_TFTWIDTH);
         while (len-- > 0) { _writedata16_cont(*p++); }
         }
 
 
-    void  ILI9341Driver::_pushpixels_mode1(const uint16_t* fb, int xx, int yy, int len)
+    FLASHMEM void  ILI9341Driver::_pushpixels_mode1(const uint16_t* fb, int xx, int yy, int len)
         {
         int x = yy;
         int y = ILI9341_T4_TFTWIDTH - 1 - xx;
@@ -1239,7 +1241,7 @@ namespace ILI9341_T4
         }
 
 
-    void  ILI9341Driver::_pushpixels_mode2(const uint16_t* fb, int xx, int yy, int len)
+    FLASHMEM void  ILI9341Driver::_pushpixels_mode2(const uint16_t* fb, int xx, int yy, int len)
         {
         int x = ILI9341_T4_TFTWIDTH - 1 - xx;
         int y = ILI9341_T4_TFTHEIGHT - 1 - yy;
@@ -1248,7 +1250,7 @@ namespace ILI9341_T4
         }
 
 
-    void  ILI9341Driver::_pushpixels_mode3(const uint16_t* fb, int xx, int yy, int len)
+    FLASHMEM void  ILI9341Driver::_pushpixels_mode3(const uint16_t* fb, int xx, int yy, int len)
         {
         int x = ILI9341_T4_TFTHEIGHT - 1 - yy;
         int y = xx;    
@@ -1268,9 +1270,8 @@ namespace ILI9341_T4
         _startframe(_vsync_spacing > 0);
         _margin = ILI9341_T4_NB_SCANLINES;
         _stats_nb_uploaded_pixels = 0;
-        diff->initRead();
-        int x = 0, y = 0, len = 0;
-        int sc1 = diff->readDiff(x, y, len, 0); // scanline at 0 so sc1 will contain the scanline start position. 
+                
+        int sc1 = diff->scanlineStartInit();         
         if (sc1 < 0)
             { // Diff is empty
             if (_vsync_spacing > 0)
@@ -1313,6 +1314,15 @@ namespace ILI9341_T4
             _last_delta = (int)round(((double)(tfs - _timeframestart)) / (_period));
             _timeframestart = tfs;
             }
+            
+        int x = 0, y = 0, len = 0;
+        int r = diff->readDiff(x, y, len, sc1); // pretend we are at sc1 to get the instruction without waiting
+        if ((r != 0) || (len <= 0))
+            {
+            _print("***  Error in LI9341Driver::_updateNow(). THIS SHOULD NEVER HAPPEN !!! ***\n");
+            }
+        diff->initRead(); // reset
+        
         _beginSPITransaction(_spi_clock);
         // write full PASET/CASET now and we shall only update the start position from now on. 
         _writecommand_cont(ILI9341_T4_CASET);
@@ -1322,7 +1332,7 @@ namespace ILI9341_T4
         _writedata16_cont(y);
         _writedata16_last(ILI9341_T4_TFTHEIGHT);
         int prev_x = x;
-        int prev_y = y;
+        int prev_y = y;        
         while (1)
             {
             int asl = (_vsync_spacing > 0) ? (_slinitpos + _nbScanlineDuring(_em_async)) : (2*ILI9341_T4_TFTHEIGHT);
@@ -1337,10 +1347,11 @@ namespace ILI9341_T4
                 continue;
                 }
             if (r < 0)
-                { // finished                
-                _writecommand_last(ILI9341_T4_NOP);
-                _endSPITransaction();
+                { // finished                                
+                _writecommand_last(ILI9341_T4_NOP);                
+                _endSPITransaction();                               
                 _endframe();
+
                 return;
                 }
             _stats_nb_uploaded_pixels += len;
@@ -1365,6 +1376,7 @@ namespace ILI9341_T4
                 if (m < _margin) _margin = m;
                 }           
             }
+        
         }
 
 
@@ -1460,11 +1472,10 @@ namespace ILI9341_T4
         //_flush_cache(fb, 2 * ILI9341_T4_NB_PIXELS); // BEWARE THAT CACHE IF FLUSHED BEFORE CALLING THIS METHOD !
         _fb = fb;
         _diff = diff;                
-        diff->initRead();
-        int x = 0, y = 0, len = 0;        
-        int sc1 = diff->readDiff(x, y, len, 0); // scanline at 0 so sc1 will contain the scanline start position. 
+               
+        int sc1 = diff->scanlineStartInit();  // position of scanline at start 
         if (sc1 < 0)
-            { // Diff is empty. 
+            { // Diff is empty.
             _dmaObject[_spi_num] = nullptr;
             if (_vsync_spacing > 0)
                 { // note the next time. 
@@ -1484,6 +1495,14 @@ namespace ILI9341_T4
             return;
             }
 
+        int x = 0, y = 0, len = 0;
+        int r = diff->readDiff(x, y, len, sc1); // pretend we are at sc1 to get the instruction without waiting
+        if ((r != 0) || (len <= 0))
+            {                
+            _print("***  Error in LI9341Driver::_updateAsync(). THIS SHOULD NEVER HAPPEN !!! ***\n");
+            }            
+        diff->initRead(); // reset
+        
         // write full PASET/CASET now and we shall only update the start position from now on. 
         _beginSPITransaction(_spi_clock);
         _writecommand_cont(ILI9341_T4_CASET); 
@@ -1565,8 +1584,9 @@ namespace ILI9341_T4
 
         // read the first instruction
         int x = 0, y = 0, len = 0;
-        int asl = (_vsync_spacing > 0) ? _slinitpos  : (2 * ILI9341_T4_TFTHEIGHT);
+        int asl = 2 * ILI9341_T4_TFTHEIGHT; // make sure readDiff returns 0.  (_vsync_spacing > 0) ? _slinitpos  : (2 * ILI9341_T4_TFTHEIGHT);
         int r = _diff->readDiff(x, y, len, asl);
+        //Serial.printf("x= %d y=%d len=%d r=%d asl=%d\n",x,y,len,r, asl);  // debugging
         if ((r != 0)||(len == 0)||(x != _prev_caset_x)||(y != _prev_paset_y))
             { // this should not happen, but try to fail gracefully.            
             _endframe();
@@ -1844,7 +1864,7 @@ namespace ILI9341_T4
     ***********************************************************************************************************/
 
 
-    void ILI9341Driver::_drawRect(int xmin, int xmax, int ymin, int ymax, uint16_t color)
+    FLASHMEM void ILI9341Driver::_drawRect(int xmin, int xmax, int ymin, int ymax, uint16_t color)
         {
         _waitUpdateAsyncComplete();
         _beginSPITransaction(_spi_clock);
@@ -1863,7 +1883,7 @@ namespace ILI9341_T4
         }
 
 
-    uint8_t ILI9341Driver::_readcommand8(uint8_t c, uint8_t index, int timeout_ms)
+    FLASHMEM uint8_t ILI9341Driver::_readcommand8(uint8_t c, uint8_t index, int timeout_ms)
         {
         // Bail if not valid miso
         if (_miso == 255)
@@ -1918,15 +1938,21 @@ namespace ILI9341_T4
 
     void ILI9341Driver::_waitTransmitComplete()
         {           
-        uint32_t tmp __attribute__((unused));
-        while (_pending_rx_count)
+        uint32_t tmp __attribute__((unused));                       
+        elapsedMicros em = 0; 
+        while(_pending_rx_count)
             {
+            if (em > 50) 
+                {
+                _print("***  WARNING: hanging in  ILI9341Driver::_waitTransmitComplete() ...***\n");
+                break; // bug ? with _update_now() sometime the ocunt never goes to zero... 
+                }      
             if ((_pimxrt_spi->RSR & LPSPI_RSR_RXEMPTY) == 0)
                 {
                 tmp = _pimxrt_spi->RDR; // Read any pending RX bytes in
                 _pending_rx_count--;     // decrement count of bytes still levt
                 }
-            }
+            }                
         _pimxrt_spi->CR = LPSPI_CR_MEN | LPSPI_CR_RRF; // Clear RX FIFO
         }
 
@@ -1975,7 +2001,7 @@ namespace ILI9341_T4
         }
 
 
-    bool ILI9341Driver::_clipit(int& x, int& y, int& sx, int& sy, int & b_left, int & b_up, int lx, int ly)
+    FLASHMEM bool ILI9341Driver::_clipit(int& x, int& y, int& sx, int& sy, int & b_left, int & b_up, int lx, int ly)
         {
         b_left = 0;
         b_up = 0; 
@@ -2551,7 +2577,7 @@ namespace ILI9341_T4
 
 
 
-    void ILI9341Driver::_endframe()
+    FLASHMEM void ILI9341Driver::_endframe()
         {
         _fps_ticks++;
         const uint32_t tfps = _fps_counter;
@@ -2636,7 +2662,7 @@ namespace ILI9341_T4
         }
 
 
-    void ILI9341Driver::_updateTouch2()
+    FLASHMEM void ILI9341Driver::_updateTouch2()
         {
         int16_t data[6] = { 0,0,0,0,0,0};
         int z = 0;
@@ -2687,7 +2713,7 @@ namespace ILI9341_T4
         }
 
 
-    void ILI9341Driver::_updateTouch()
+    FLASHMEM void ILI9341Driver::_updateTouch()
         {
         if (_em_touched_read < ILI9341_T4_TOUCH_MSEC_THRESHOLD) return; // read not so long ago
         if ((_touch_irq != 255) && (_touched_read == false)) return; // nothing to do. 
@@ -2751,7 +2777,7 @@ namespace ILI9341_T4
         }
 
 
-    int16_t ILI9341Driver::_besttwoavg(int16_t x, int16_t y, int16_t z)
+    FLASHMEM int16_t ILI9341Driver::_besttwoavg(int16_t x, int16_t y, int16_t z)
         {
         int16_t da, db, dc;
         int16_t reta = 0;

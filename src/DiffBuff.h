@@ -161,6 +161,12 @@ namespace ILI9341_T4
 
 
         /**
+        * Return the best possible scanline position at the begining of the diff
+        * - scanline: the current position of the scanline
+        **/
+        virtual int scanlineStartInit() = 0; 
+
+        /**
         * Read the next instruction in the diff.
         * - 'x','y' and 'len' are used to store the next instruction. 
         * - 'scanline' must contain the current position of the scanline
@@ -176,6 +182,8 @@ namespace ILI9341_T4
         * - returns a<0 : finished reading the diff. 
         **/
         virtual int readDiff(int& x, int& y, int& len, int scanline) = 0;
+
+
 
 
         /**
@@ -282,6 +290,9 @@ namespace ILI9341_T4
             _posr = 0; 
             _off = 0; 
             }
+
+
+        virtual int scanlineStartInit() override; 
 
 
         virtual int readDiff(int& x, int& y, int& len, int scanline) override;
@@ -593,6 +604,8 @@ namespace ILI9341_T4
             _current_line = _begin;
             }
 
+
+        virtual int scanlineStartInit() override; 
 
         virtual int readDiff(int& x, int& y, int& len, int scanline) override;
         
