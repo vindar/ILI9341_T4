@@ -2791,7 +2791,7 @@ namespace ILI9341_T4
         }
 
 
-    FLASHMEM void ILI9341Driver::setTouchCalibration(int touchCalibration[4])
+    FLASHMEM void ILI9341Driver::setTouchCalibration(const int touchCalibration[4])
         {
         if (touchCalibration)
             {

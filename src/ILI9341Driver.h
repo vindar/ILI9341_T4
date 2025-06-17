@@ -1265,7 +1265,7 @@ public:
     *    for positions {x[0], x[239], y[0], y[319]} in orientation 0. This is 
     *    the same array as returned by calibrateTouch();
     **/
-    void setTouchCalibration(int touchCalibration[4] = nullptr);
+    void setTouchCalibration(const int touchCalibration[4] = nullptr);
 
 
     /**
