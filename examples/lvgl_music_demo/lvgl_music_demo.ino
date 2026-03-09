@@ -26,7 +26,7 @@
 * (1) Install the 'lvgl' libraries in Arduino's library folder.
 *     from the github repo: https://github.com/lvgl/lvgl/ directly
 *     into Arduino's library folder
-*     !!! This example requires LVGL version 9.2 or later. !!!
+*     !!! This example was tested with LVGL version 9.5 !!!
 *
 * (2) Copy and rename the file 'libraries/lvgl/lv_conf_template.h' to
 *     'libraries/lv_conf.h' (i.e. put this file directly in Arduino's
@@ -34,12 +34,13 @@
 *
 * (3) Edit the file 'lv_conf.h' such that:
 *
-*     -> Replace '#if 0' by '#if 1'               (at the begining of the file)
+*     -> Replace '#if 0' by '#if 1'                (at the begining of the file)
 *     -> set #define LV_COLOR_DEPTH 16            (should be already set to the correct value)
 *     -> set #define LV_DEF_REFR_PERIOD  16       (33FPS, this is to increase it to 60FPS, come on !!!)
-*     -> set #define LV_FONT_MONTSERRAT_12  1
+*     -> set #define LV_ATTRIBUTE_LARGE_CONST  __attribute__((section(".progmem"))) (empty by default)
+*     -> set #define LV_FONT_MONTSERRAT_12  1     (set to 0 by default)  
 *     -> set #define LV_FONT_MONTSERRAT_14  1     (should be already set to the correct value)
-*     -> set #define LV_FONT_MONTSERRAT_16  1
+*     -> set #define LV_FONT_MONTSERRAT_16  1     (set to 0 by default)
 *
 ********************************************************************/
 
@@ -89,8 +90,8 @@
 #define LY  240
 
 // 2 diff buffers with about 8K memory each
-ILI9341_T4::DiffBuffStatic<8000> diff1;
-ILI9341_T4::DiffBuffStatic<8000> diff2;
+DMAMEM ILI9341_T4::DiffBuffStatic<8000> diff1;
+DMAMEM ILI9341_T4::DiffBuffStatic<8000> diff2;
 
 // the internal framebuffer for the ILI9341_T4 driver (150KB) 
 // in DMAMEM to save space in the lower (faster) part of RAM. 
@@ -103,7 +104,7 @@ ILI9341_T4::ILI9341Driver tft(PIN_CS, PIN_DC, PIN_SCK, PIN_MOSI, PIN_MISO, PIN_R
 // number of lines in lvgl's internal draw buffer 
 #define BUF_LY 40
 
-lv_color_t lvgl_buf[LX * BUF_LY]; // memory for lvgl draw buffer (25KB) 
+DMAMEM lv_color_t lvgl_buf[LX * BUF_LY]; // memory for lvgl draw buffer (25KB) 
 
 lv_display_t* disp; // pointer to lvgl display object
 lv_indev_t* indev;  // pointer to lvgl input device object

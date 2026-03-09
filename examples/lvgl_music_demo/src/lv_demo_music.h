@@ -13,10 +13,13 @@ extern "C" {
 /*********************
  *      INCLUDES
  *********************/
-//#include "../lv_demos.h"
 
 #include <lvgl.h>
 #include <Arduino.h>
+
+#include "lv_demos.h"
+
+
 
 
 /** Disable performance monitor because there is a bug in the code when enabled (with LVGL v9.2) */
@@ -63,10 +66,6 @@ extern "C" {
 #define LV_DEMO_MUSIC_AUTO_PLAY 1
 
 
-
-
-
-
 #if LV_USE_DEMO_MUSIC
 
 /*********************
@@ -83,11 +82,22 @@ extern "C" {
  *      TYPEDEFS
  **********************/
 
+
+
+
+
+
+
 /**********************
  * GLOBAL PROTOTYPES
  **********************/
 
 void lv_demo_music(void);
+/**
+ * Create the music demo with custom arguments.
+ * @param args Pointer to demo arguments structure containing the parent widget and other options.
+ */
+void lv_demo_music_with_args(const lv_demo_args_t * args);
 const char * lv_demo_music_get_title(uint32_t track_id);
 const char * lv_demo_music_get_artist(uint32_t track_id);
 const char * lv_demo_music_get_genre(uint32_t track_id);

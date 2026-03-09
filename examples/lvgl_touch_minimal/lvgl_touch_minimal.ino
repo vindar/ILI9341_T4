@@ -27,8 +27,8 @@
 *
 * (1) Install the 'lvgl' libraries in Arduino's library folder.
 *     from the github repo: https://github.com/lvgl/lvgl/ directly
-*     into Arduino's library folder 
-*     !!! This example requires LVGL version 9.2 or later. !!!
+*     into Arduino's library folder
+*     !!! This example was tested with LVGL version 9.5 !!!
 *
 * (2) Copy and rename the file 'libraries/lvgl/lv_conf_template.h' to
 *     'libraries/lv_conf.h' (i.e. put this file directly in Arduino's
@@ -36,14 +36,13 @@
 *
 * (3) Edit the file 'lv_conf.h' such that:
 *
-*     -> Replace '#if 0' by '#if 1'               (at the begining of the file)
+*     -> Replace '#if 0' by '#if 1'                (at the begining of the file)
 *     -> set #define LV_COLOR_DEPTH 16            (should be already set to the correct value)
 *     -> set #define LV_DEF_REFR_PERIOD  16       (33FPS, this is to increase it to 60FPS, come on !!!)
-*     -> set #define LV_FONT_MONTSERRAT_12  1     
+*     -> set #define LV_ATTRIBUTE_LARGE_CONST  __attribute__((section(".progmem"))) (empty by default)
+*     -> set #define LV_FONT_MONTSERRAT_12  1     (set to 0 by default)  
 *     -> set #define LV_FONT_MONTSERRAT_14  1     (should be already set to the correct value)
-*     -> set #define LV_FONT_MONTSERRAT_16  1     
-*     -> set #define LV_USE_SYSMON   1            (only if you want to display the FPS on the screen)
-*     -> set #define LV_USE_PERF_MONITOR 1        (only if you want to display the FPS on the screen)
+*     -> set #define LV_FONT_MONTSERRAT_16  1     (set to 0 by default)
 *
 ********************************************************************/
 
