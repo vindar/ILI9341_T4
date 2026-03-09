@@ -533,6 +533,7 @@ namespace ILI9341_T4
             if (--r <= 0)
                 {
                 _print("\n*** CANNOT CONNECT TO ILI9341 SCREEN. ABORTING... ***\n\n");
+                return false; 
                 }
             if (_spi_clock_read > 100000)_spi_clock_read /= 2;
             _printf("Retrying connexion with slower SPI read speed : %.2fMhz", _spi_clock_read / 1000000.0f);
@@ -1327,10 +1328,10 @@ namespace ILI9341_T4
         // write full PASET/CASET now and we shall only update the start position from now on. 
         _writecommand_cont(ILI9341_T4_CASET);
         _writedata16_cont(x);
-        _writedata16_cont(ILI9341_T4_TFTWIDTH);
+        _writedata16_cont(ILI9341_T4_TFTWIDTH-1);
         _writecommand_cont(ILI9341_T4_PASET);
         _writedata16_cont(y);
-        _writedata16_last(ILI9341_T4_TFTHEIGHT);
+        _writedata16_last(ILI9341_T4_TFTHEIGHT-1);
         int prev_x = x;
         int prev_y = y;        
         while (1)
@@ -1507,10 +1508,10 @@ namespace ILI9341_T4
         _beginSPITransaction(_spi_clock);
         _writecommand_cont(ILI9341_T4_CASET); 
         _writedata16_cont(x);
-        _writedata16_cont(ILI9341_T4_TFTWIDTH);
+        _writedata16_cont(ILI9341_T4_TFTWIDTH-1);
         _writecommand_cont(ILI9341_T4_PASET);
         _writedata16_cont(y);
-        _writedata16_last(ILI9341_T4_TFTHEIGHT);
+        _writedata16_last(ILI9341_T4_TFTHEIGHT-1);
         _endSPITransaction();
         _prev_caset_x = x;
         _prev_paset_y = y;

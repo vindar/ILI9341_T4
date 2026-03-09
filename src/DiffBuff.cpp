@@ -115,9 +115,9 @@ namespace ILI9341_T4
             for (int j = DiffBuffBase::LY - 1; j >= 0; j--)
                 {
                 int i = DiffBuffBase::LX - 1;
+                const int oo = DiffBuffBase::LX * j;
                 while (i >= 0)
                     {
-                    const int oo = DiffBuffBase::LX * j;
                     *(p++) = fb_src[(i--) + oo];
                     *(p++) = fb_src[(i--) + oo];
                     *(p++) = fb_src[(i--) + oo];

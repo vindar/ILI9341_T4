@@ -1576,7 +1576,8 @@ private:
      * This can take a while (100us) so don't abuse it !
      **/
     void _flush_cache(const void* ptr, size_t len) ILI9341_T4_ALWAYS_INLINE
-        {
+        {  
+        // OCRAM >= 0x20200000, SDRAM/PSRAM >= 0x70000000
         if ((uint32_t)ptr >= 0x20200000u) arm_dcache_flush((void*)ptr, len);
         asm("dsb");
         }

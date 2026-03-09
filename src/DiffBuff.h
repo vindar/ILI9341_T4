@@ -629,6 +629,7 @@ namespace ILI9341_T4
                 _rawnb = 2;
                 nbwrite = DiffBuffBase::LX * (_end - _begin);
                 nbskip = DiffBuffBase::LX * (DiffBuffBase::LY - _end);
+                return;
                 }
             nbwrite = 0;
             nbskip = DiffBuffBase::LX * DiffBuffBase::LY + 1;
