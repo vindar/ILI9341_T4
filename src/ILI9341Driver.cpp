@@ -142,6 +142,8 @@ namespace ILI9341_T4
         _fb = nullptr;
         _diff = nullptr;
         _dma_state = ILI9341_T4_DMA_IDLE;
+        _dmaCB = nullptr;
+        _dmaCBdata = nullptr;
         _last_delta = 0;         
         _timeframestart = 0;
         _last_y = 0;
@@ -999,6 +1001,16 @@ namespace ILI9341_T4
     ***********************************************************************************************************/
 
 
+    FLASHMEM void ILI9341Driver::setAsyncUpdateCB(void (*callback)(void *), void * userdata)
+        {
+        noInterrupts();
+        _dmaCB = callback;
+        _dmaCBdata = userdata;
+        interrupts();
+        }
+
+
+
     FLASHMEM void ILI9341Driver::clear(uint16_t color)
         {
         _waitUpdateAsyncComplete();    
@@ -1468,7 +1480,6 @@ namespace ILI9341_T4
         _startframe(_vsync_spacing > 0);
         _stats_nb_uploaded_pixels = 0;
         _margin = ILI9341_T4_NB_SCANLINES;
-        _dma_state = ILI9341_T4_DMA_ON;
         _dmaObject[_spi_num] = this; // set up object callback.
         //_flush_cache(fb, 2 * ILI9341_T4_NB_PIXELS); // BEWARE THAT CACHE IF FLUSHED BEFORE CALLING THIS METHOD !
         _fb = fb;
@@ -1492,7 +1503,6 @@ namespace ILI9341_T4
                 _touch_request_read = false;
                 }
             _dmaObject[_spi_num] = nullptr;
-            _dma_state = ILI9341_T4_DMA_IDLE;
             return;
             }
 
@@ -1516,6 +1526,8 @@ namespace ILI9341_T4
         _prev_caset_x = x;
         _prev_paset_y = y;
         _slinitpos = sc1; // save the requested scanline initial position
+
+        _dma_state = ILI9341_T4_DMA_ON;
 
         if (_vsync_spacing <= 0)
             { // call next method asap
@@ -1598,6 +1610,7 @@ namespace ILI9341_T4
                 }
             _dmaObject[_spi_num] = nullptr;
             _dma_state = ILI9341_T4_DMA_IDLE;
+            if (_dmaCB) {_dmaCB(_dmaCBdata); } // call the user callback is present to signal the end of the async transfer
             return;
             }
 
@@ -1685,6 +1698,7 @@ namespace ILI9341_T4
             // _flush_cache(_fb, 2 * ILI9341_T4_NB_PIXELS);   /// NOT USEFUL AFTER NO ????
             _dmaObject[_spi_num] = nullptr;
             _dma_state = ILI9341_T4_DMA_IDLE;
+            if (_dmaCB) {_dmaCB(_dmaCBdata); } // call the user callback is present to signal the end of the async transfer
             return;
             }
         else if (r > 0)

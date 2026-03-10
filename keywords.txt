@@ -58,6 +58,7 @@ update	KEYWORD2
 updateRegion	KEYWORD2
 waitUpdateAsyncComplete	KEYWORD2
 asyncUpdateActive	KEYWORD2
+setAsyncUpdateCB	KEYWORD2
 overlayText	KEYWORD2
 overlayFPS	KEYWORD2
 statsNbFrames	KEYWORD2

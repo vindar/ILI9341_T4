@@ -982,6 +982,30 @@ public:
 
 
 
+    /**
+    * Set a callback called when an async update (DMA transfer) completes. 
+    *
+    * Call `setAsyncUpdateCB()` again without parameters to disable the callback previously set. 
+    *
+    * Parameters:
+    *
+    * - void callback(void *)  the callback function called at end of async. transfer
+    * - userdata               optional user-defined payload sent to the callback
+    *    
+    * Note: 
+    *
+    * 1. !!! The callback is called from an ISR !!!
+    *
+    * 2. The callback may never be called if there is no pixel to upload (e.g. an empty diff)
+    *    or if async updates are disabled (no internal buffer)... To check if the callback will
+    *    be called ultimately, just check asyncUpdateActive(). if it returns true then it is 
+    *    guaranteed that the callback will be called at the end of the transfer. 
+    *
+    **/
+    void setAsyncUpdateCB(void (*callback)(void *) = nullptr, void * userdata = nullptr);
+
+
+
 
 
     /***************************************************************************************************
@@ -1508,6 +1532,10 @@ private:
         };
 
     volatile uint8_t _dma_state;                // DMA current status
+    
+    void (*_dmaCB)(void *);                     // user-defined async update complete callback
+    void * _dmaCBdata;                          // user defined data payload for async update complete callback
+
 
     DMAChannel _dmatx;                          // the dma channel object. 
   
