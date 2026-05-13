@@ -782,29 +782,56 @@ namespace ILI9341_T4
             return ( _synced_scanline + ((((uint64_t)_synced_em)* ILI9341_T4_NB_SCANLINES) / _period) ) % ILI9341_T4_NB_SCANLINES;
             }
     
+        const auto estimatedScanline = [&]() -> int
+            {
+            if (_period == 0) return _synced_scanline;
+            return ( _synced_scanline + ((((uint64_t)_synced_em)* ILI9341_T4_NB_SCANLINES) / _period) ) % ILI9341_T4_NB_SCANLINES;
+            };
+        const auto timeoutScanlineRead = [&]() -> int
+            {
+            _print("***  WARNING: timeout in ILI9341Driver::_getScanLine(); using estimated scanline ***\n");
+            _pimxrt_spi->CR = LPSPI_CR_MEN | LPSPI_CR_RRF | LPSPI_CR_RTF;
+            _endSPITransaction();
+            return estimatedScanline();
+            };
+        static constexpr uint32_t SCANLINE_READ_TIMEOUT_US = 1000;
+        elapsedMicros em = 0;
+
         _beginSPITransaction(_spi_clock_read);
 
         _maybeUpdateTCR(_tcr_dc_assert | LPSPI_TCR_FRAMESZ(7));
         _pimxrt_spi->TDR = ILI9341_T4_GSLINE; // send command
         _pimxrt_spi->TCR = _spi_tcr_current;
-        while ((_pimxrt_spi->FSR & 0x1f)); // make sure command has been sent
+        while ((_pimxrt_spi->FSR & 0x1f)) // make sure command has been sent
+            {
+            if (em > SCANLINE_READ_TIMEOUT_US) return timeoutScanlineRead();
+            }
         delayMicroseconds(3); // wait as requeted per manual
 
         uint32_t val = 0; 
 
-        while ((_pimxrt_spi->RSR & LPSPI_RSR_RXEMPTY) != 0);
+        while ((_pimxrt_spi->RSR & LPSPI_RSR_RXEMPTY) != 0)
+            {
+            if (em > SCANLINE_READ_TIMEOUT_US) return timeoutScanlineRead();
+            }
         val = _pimxrt_spi->RDR; // Read pending RX bytes
 
         _maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(7));
         _pimxrt_spi->TDR = 0;
 
-        while ((_pimxrt_spi->RSR & LPSPI_RSR_RXEMPTY) != 0);
+        while ((_pimxrt_spi->RSR & LPSPI_RSR_RXEMPTY) != 0)
+            {
+            if (em > SCANLINE_READ_TIMEOUT_US) return timeoutScanlineRead();
+            }
         val = _pimxrt_spi->RDR; // Read pending RX bytes
        
         _maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(8)); // AHAH, the value is 9 bits ! lol...
         _pimxrt_spi->TDR = 0;
 
-        while ((_pimxrt_spi->RSR & LPSPI_RSR_RXEMPTY) != 0);
+        while ((_pimxrt_spi->RSR & LPSPI_RSR_RXEMPTY) != 0)
+            {
+            if (em > SCANLINE_READ_TIMEOUT_US) return timeoutScanlineRead();
+            }
         val = _pimxrt_spi->RDR; // Read pending RX bytes
 
         _synced_em = 0;
@@ -1681,6 +1708,7 @@ namespace ILI9341_T4
             while (_pimxrt_spi->FSR & 0x1f);        // wait for transmit fifo to be empty
             while (_pimxrt_spi->SR & LPSPI_SR_MBF); // wait while spi bus is busy. 
             _pimxrt_spi->FCR = LPSPI_FCR_TXWATER(15); // Transmit Data Flag (TDF) should now be set when there if less or equal than 15 words in the transmit fifo
+            _pimxrt_spi->IER = 0; // disable SPI interrupts
             _pimxrt_spi->DER = 0; // DMA no longer doing TX (nor RX)
             _pimxrt_spi->CR = LPSPI_CR_MEN | LPSPI_CR_RRF | LPSPI_CR_RTF; // enable module (MEM), reset RX fifo (RRF), reset TX fifo (RTF)
             _pimxrt_spi->SR = 0x3f00; // clear out all of the other status...
@@ -1955,20 +1983,39 @@ namespace ILI9341_T4
         {           
         uint32_t tmp __attribute__((unused));                       
         elapsedMicros em = 0; 
+        bool warning_printed = false;
         while(_pending_rx_count)
             {
-            if (em > 50) 
-                {
-                _print("***  WARNING: hanging in  ILI9341Driver::_waitTransmitComplete() ...***\n");
-                break; // bug ? with _update_now() sometime the ocunt never goes to zero... 
-                }      
             if ((_pimxrt_spi->RSR & LPSPI_RSR_RXEMPTY) == 0)
                 {
                 tmp = _pimxrt_spi->RDR; // Read any pending RX bytes in
                 _pending_rx_count--;     // decrement count of bytes still levt
+                continue;
+                }
+            if ((em > 50) && (!warning_printed)) 
+                {
+                _print("***  WARNING: hanging in  ILI9341Driver::_waitTransmitComplete() ...***\n");
+                const uint32_t sr = _pimxrt_spi->SR;
+                const uint32_t fsr = _pimxrt_spi->FSR;
+                const uint32_t rsr = _pimxrt_spi->RSR;
+                const uint32_t cr = _pimxrt_spi->CR;
+                const uint32_t tcr = _pimxrt_spi->TCR;
+                const uint32_t fcr = _pimxrt_spi->FCR;
+                const uint32_t der = _pimxrt_spi->DER;
+                const uint32_t ier = _pimxrt_spi->IER;
+                _printf("    pending_rx=%u elapsed=%uus spi=%uHz\n", (uint32_t)_pending_rx_count, (uint32_t)em, _spi_clock);
+                _printf("    SR=%08lX FSR=%08lX RSR=%08lX CR=%08lX TCR=%08lX\n", (unsigned long)sr, (unsigned long)fsr, (unsigned long)rsr, (unsigned long)cr, (unsigned long)tcr);
+                _printf("    FCR=%08lX DER=%08lX IER=%08lX TXCOUNT=%u RXCOUNT=%u\n", (unsigned long)fcr, (unsigned long)der, (unsigned long)ier, (uint32_t)(fsr & 0x1F), (uint32_t)((fsr >> 16) & 0x1F));
+                _printf("    flags: MBF=%u TDF=%u RDF=%u TCF=%u RXEMPTY=%u\n", (uint32_t)((sr & LPSPI_SR_MBF) != 0), (uint32_t)((sr & LPSPI_SR_TDF) != 0), (uint32_t)((sr & LPSPI_SR_RDF) != 0), (uint32_t)((sr & LPSPI_SR_TCF) != 0), (uint32_t)((rsr & LPSPI_RSR_RXEMPTY) != 0));
+                warning_printed = true;
+                }
+            if ((em > 1000) && ((_pimxrt_spi->SR & LPSPI_SR_MBF) == 0) && ((_pimxrt_spi->FSR & 0x1f) == 0))
+                {
+                break; // pending count got out of sync; give up only once the bus is idle.
                 }
             }                
         _pimxrt_spi->CR = LPSPI_CR_MEN | LPSPI_CR_RRF; // Clear RX FIFO
+        _pending_rx_count = 0;
         }
 
 
@@ -2735,7 +2782,15 @@ namespace ILI9341_T4
         if (asyncUpdateActive())
             {
             _touch_request_read = true; // request read at end of transfer
-            while ((_touch_request_read) && (asyncUpdateActive())); // wait until transfer complete or reading done. 
+            elapsedMillis em = 0;
+            while ((_touch_request_read) && (asyncUpdateActive())) // wait until transfer complete or reading done. 
+                {
+                if (em > 1000)
+                    {
+                    _touch_request_read = false;
+                    return;
+                    }
+                }
             if (!_touch_request_read) return; // reading was done, nothing to do. 
             _touch_request_read = false; // remove request. 
             }

@@ -1549,9 +1549,9 @@ private:
     void _dmaInterruptDiff(); // called when doing partial diff redraw
 
 
-    static void _spiInterruptSPI0_software() { _dmaObject[0]->_spiInterrupt_software(); }
-    static void _spiInterruptSPI1_software() { _dmaObject[1]->_spiInterrupt_software(); }
-    static void _spiInterruptSPI2_software() { _dmaObject[2]->_spiInterrupt_software(); }
+    static void _spiInterruptSPI0_software() { if (_dmaObject[0]) { _dmaObject[0]->_spiInterrupt_software(); } }
+    static void _spiInterruptSPI1_software() { if (_dmaObject[1]) { _dmaObject[1]->_spiInterrupt_software(); } }
+    static void _spiInterruptSPI2_software() { if (_dmaObject[2]) { _dmaObject[2]->_spiInterrupt_software(); } }
 
     // called when doing partial diff redraw
     void _spiInterrupt_software() ILI9341_T4_ALWAYS_INLINE
@@ -1575,9 +1575,9 @@ private:
         }
 
 
-    static void _spiInterruptSPI0_hardware() { _dmaObject[0]->_spiInterrupt_hardware(); }
-    static void _spiInterruptSPI1_hardware() { _dmaObject[1]->_spiInterrupt_hardware(); }
-    static void _spiInterruptSPI2_hardware() { _dmaObject[2]->_spiInterrupt_hardware(); }
+    static void _spiInterruptSPI0_hardware() { if (_dmaObject[0]) { _dmaObject[0]->_spiInterrupt_hardware(); } }
+    static void _spiInterruptSPI1_hardware() { if (_dmaObject[1]) { _dmaObject[1]->_spiInterrupt_hardware(); } }
+    static void _spiInterruptSPI2_hardware() { if (_dmaObject[2]) { _dmaObject[2]->_spiInterrupt_hardware(); } }
 
     // called when doing partial diff redraw
     void _spiInterrupt_hardware() ILI9341_T4_ALWAYS_INLINE        
