@@ -1375,17 +1375,6 @@ private:
 
     template<typename T1, typename T2> void _println(const T1 & u, const T2 & v) const { if (_outputStream) _outputStream->println(u,v); }
 
-    template<typename T1> void _printf(const char * str, const T1 & a) const { if (_outputStream) _outputStream->printf(str, a); }
-
-    template<typename T1, typename T2> void _printf(const char * str, const T1 & a, const T2 & b) const { if (_outputStream) _outputStream->printf(str, a,b); }
-
-    template<typename T1, typename T2, typename T3> void _printf(const char * str, const T1 & a, const T2 & b, const T3 & c) const { if (_outputStream) _outputStream->printf(str, a,b,c); }
-
-    template<typename T1, typename T2, typename T3, typename T4> void _printf(const char * str, const T1 & a, const T2 & b, const T3 & c, const T4 & d) const { if (_outputStream) _outputStream->printf(str, a,b,c,d); }
-
-    template<typename T1, typename T2, typename T3, typename T4, typename T5> void _printf(const char* str, const T1& a, const T2& b, const T3& c, const T4& d, const T5& e) const { if (_outputStream) _outputStream->printf(str, a, b, c, d, e); }
-
-
     /**********************************************************************************************************
     * About buffering / update mode.
     ***********************************************************************************************************/
@@ -1481,7 +1470,7 @@ private:
     * - return asap and update is async via DMA.
     * - uses the _vsync_spacing parameter to choose the vsync stategy.
     **/
-    void _updateAsync(const uint16_t* fb, DiffBuffBase* diff);
+    bool _updateAsync(const uint16_t* fb, DiffBuffBase* diff);
 
 
 
@@ -1758,44 +1747,50 @@ private:
     void _timerinit();
 
 
+    /** Abort an async update when no PIT timer is available. */
+    void _abortAsyncUpdateNoTimer(bool spi_transaction_active);
+
+
     /** Set the timer to ring in us microseconds. */
-    void _setTimerIn(uint32_t us, methodCB_t timercb) ILI9341_T4_ALWAYS_INLINE
+    bool _setTimerIn(uint32_t us, methodCB_t timercb) ILI9341_T4_ALWAYS_INLINE
         {
         noInterrupts();
         _it.end(); // stop ongoing timer before changing callback method. 
         _pitcb = timercb;
         if ((us <= 3) || (us > ILI9341_T4_MAX_DELAY_MICROSECONDS)) { us = 3; } // asap
         _it.priority(_irq_priority);
-        _istimer = true;
+        bool ok = false;
         switch (_pitindex)
             {
             case 0: 
                 {
-                _it.begin(_pitcb0, us); 
+                ok = _it.begin(_pitcb0, us); 
                 break;
                 }
             case 1: 
                 {
-                _it.begin(_pitcb1, us); 
+                ok = _it.begin(_pitcb1, us); 
                 break;
                 }
             case 2: 
                 {
-                _it.begin(_pitcb2, us); 
+                ok = _it.begin(_pitcb2, us); 
                 break;
                 }
             case 3: 
                 {
-                _it.begin(_pitcb3, us); 
+                ok = _it.begin(_pitcb3, us); 
                 break;
                 }
             }
+        _istimer = ok;
         interrupts();
+        return ok;
         }
 
 
     /** Set the timer to ring when micros() reaches ustime */
-    void _setTimerAt(uint32_t ustime, methodCB_t timercb) ILI9341_T4_ALWAYS_INLINE
+    bool _setTimerAt(uint32_t ustime, methodCB_t timercb) ILI9341_T4_ALWAYS_INLINE
         {
         const uint32_t m = micros();
         const uint32_t max_us = (max(_vsync_spacing, 1) + 1) * _period;
@@ -1807,13 +1802,15 @@ private:
         else if (ustime > m + max_us)
             {
             us = max_us;
-            _printf("Abnormally large value for setTimerAt() : %d us", ustime - m);
+            _print("Abnormally large value for setTimerAt() : ");
+            _print(ustime - m);
+            _print(" us");
             }
         else
             {
             us = ustime - m;
             }
-        _setTimerIn(us, timercb);
+        return _setTimerIn(us, timercb);
         }
 
 
@@ -1983,7 +1980,7 @@ private:
     uint8_t  _spi_num;                          //  spi busd number: 0 1 or 2
     SPIClass* _pspi = nullptr;                  // the main spi object
     IMXRT_LPSPI_t* _pimxrt_spi;                 // Raw access to the spi registers (same as _pspi->port() private method). 
-    SPIClass::SPI_Hardware_t* _spi_hardware;    // Raw internal spi hardware (same as _pspi->hardware() private method). Hacked from _pspi and used for DMA transfer.
+    const SPIClass::SPI_Hardware_t* _spi_hardware;    // Raw internal spi hardware, used for pin setup without MISO and DMA transfer.
 
     uint32_t _cspinmask;                        // mask for the CS pin when writing directly to register port (used by directWriteHigh/Low methods)
     volatile uint32_t* _csport;                 // port to which the CS pin belongs (used by directWriteHigh/Low methods)

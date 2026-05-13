@@ -646,7 +646,7 @@ namespace T4Diff
             {
             if (outputStream)
                 {
-                outputStream->printf("--- DiffBuffDummyT ---\n");
+                outputStream->print("--- DiffBuffDummyT ---\n");
                 }
             }
 
@@ -1785,11 +1785,19 @@ namespace T4Diff
             {
             if (outputStream)
                 {
-                outputStream->printf("------------------- DiffBuff Stats -------------------\n");
-                outputStream->printf("- max. buffer size   : %u\n", this->_sizebuf + DiffBuffT<Traits>::PADDING);
-                outputStream->printf("- overflow ratio     : %.1f%%  (%u out of %u computed)\n", 100 * this->statsOverflowRatio(), this->statsNbOverflow(), this->statsNbComputed());
-                outputStream->printf("- buffer size used   : "); this->_stats_size.print("", "\n", outputStream);
-                outputStream->printf("- computation time   : "); this->_stats_time.print("us", "\n\n", outputStream);
+                outputStream->print("------------------- DiffBuff Stats -------------------\n");
+                outputStream->print("- max. buffer size   : ");
+                outputStream->print(this->_sizebuf + DiffBuffT<Traits>::PADDING);
+                outputStream->print('\n');
+                outputStream->print("- overflow ratio     : ");
+                outputStream->print(100 * this->statsOverflowRatio(), 1);
+                outputStream->print("%  (");
+                outputStream->print(this->statsNbOverflow());
+                outputStream->print(" out of ");
+                outputStream->print(this->statsNbComputed());
+                outputStream->print(" computed)\n");
+                outputStream->print("- buffer size used   : "); this->_stats_size.print("", "\n", outputStream);
+                outputStream->print("- computation time   : "); this->_stats_time.print("us", "\n\n", outputStream);
                 }
             }
 

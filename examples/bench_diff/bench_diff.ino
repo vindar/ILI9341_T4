@@ -290,7 +290,19 @@ static uint64_t hashWritePixel(uint64_t h, int pos, uint16_t v)
 
 static void printHash(uint64_t h)
 {
-    Serial.printf("%08lx%08lx", (uint32_t)(h >> 32), (uint32_t)h);
+    static const char hex[] = "0123456789abcdef";
+    const auto printHex32 = [&](uint32_t v)
+    {
+        for (int shift = 28; shift >= 0; shift -= 4) Serial.print(hex[(v >> shift) & 0x0f]);
+    };
+    printHex32((uint32_t)(h >> 32));
+    printHex32((uint32_t)h);
+}
+
+static void printHex16(uint16_t v)
+{
+    static const char hex[] = "0123456789abcdef";
+    for (int shift = 12; shift >= 0; shift -= 4) Serial.print(hex[(v >> shift) & 0x0f]);
 }
 
 static uint64_t expectedHash(const uint16_t* new_fb, int orientation, uint16_t compare_mask)
@@ -625,7 +637,11 @@ static void printAvg(uint64_t total_us, int count)
 {
     const uint32_t whole = (uint32_t)(total_us / count);
     const uint32_t frac = (uint32_t)(((total_us % count) * 1000ull) / count);
-    Serial.printf("%lu.%03lu", whole, frac);
+    Serial.print(whole);
+    Serial.print('.');
+    if (frac < 100) Serial.print('0');
+    if (frac < 10) Serial.print('0');
+    Serial.print(frac);
 }
 
 static void runOne(DiffBuff& diff, const char* diff_name, int diff_size, const ScenarioDef& scn, int orientation, int gap, bool copy_new_over_old)
@@ -637,11 +653,37 @@ static void runOne(DiffBuff& diff, const char* diff_name, int diff_size, const S
     const bool ok = checkCase(diff, scn.scenario, orientation, gap, scn.compare_mask, raw_hash, mirror_hash, skip_errors, read_errors);
     const BenchResult r = runBench(diff, scn.scenario, orientation, gap, copy_new_over_old, scn.compare_mask);
 
-    Serial.printf("diff=%s(%d),scn=%s,ori=%s,gap=%d,copy=%d,mask=%04x,avg=",
-        diff_name, diff_size, scn.name, orientationName(orientation), gap, copy_new_over_old ? 1 : 0, scn.compare_mask);
+    Serial.print("diff=");
+    Serial.print(diff_name);
+    Serial.print('(');
+    Serial.print(diff_size);
+    Serial.print("),scn=");
+    Serial.print(scn.name);
+    Serial.print(",ori=");
+    Serial.print(orientationName(orientation));
+    Serial.print(",gap=");
+    Serial.print(gap);
+    Serial.print(",copy=");
+    Serial.print(copy_new_over_old ? 1 : 0);
+    Serial.print(",mask=");
+    printHex16(scn.compare_mask);
+    Serial.print(",avg=");
     printAvg(r.total_us, ITER);
-    Serial.printf("us,min=%lu,max=%lu,size=%d,of=%lu,check=%s,skiperr=%lu,readerr=%lu,raw=",
-        r.min_us, r.max_us, r.last_size, r.overflow_count, ok ? "OK" : "FAIL", skip_errors, read_errors);
+    Serial.print("us,min=");
+    Serial.print(r.min_us);
+    Serial.print(",max=");
+    Serial.print(r.max_us);
+    Serial.print(",size=");
+    Serial.print(r.last_size);
+    Serial.print(",of=");
+    Serial.print(r.overflow_count);
+    Serial.print(",check=");
+    Serial.print(ok ? "OK" : "FAIL");
+    Serial.print(",skiperr=");
+    Serial.print(skip_errors);
+    Serial.print(",readerr=");
+    Serial.print(read_errors);
+    Serial.print(",raw=");
     printHash(raw_hash);
     Serial.print(",mirror=");
     printHash(mirror_hash);
@@ -658,11 +700,37 @@ static void runOneWithBuffers(DiffBuff& diff, const char* diff_name, int diff_si
     const bool ok = checkCaseWithBuffers(diff, old_fb, new_fb, scn.scenario, orientation, gap, scn.compare_mask, raw_hash, mirror_hash, skip_errors, read_errors);
     const BenchResult r = runBenchWithBuffers(diff, old_fb, new_fb, scn.scenario, orientation, gap, copy_new_over_old, scn.compare_mask);
 
-    Serial.printf("diff=%s(%d),scn=%s,ori=%s,gap=%d,copy=%d,mask=%04x,avg=",
-        diff_name, diff_size, scn.name, orientationName(orientation), gap, copy_new_over_old ? 1 : 0, scn.compare_mask);
+    Serial.print("diff=");
+    Serial.print(diff_name);
+    Serial.print('(');
+    Serial.print(diff_size);
+    Serial.print("),scn=");
+    Serial.print(scn.name);
+    Serial.print(",ori=");
+    Serial.print(orientationName(orientation));
+    Serial.print(",gap=");
+    Serial.print(gap);
+    Serial.print(",copy=");
+    Serial.print(copy_new_over_old ? 1 : 0);
+    Serial.print(",mask=");
+    printHex16(scn.compare_mask);
+    Serial.print(",avg=");
     printAvg(r.total_us, ITER);
-    Serial.printf("us,min=%lu,max=%lu,size=%d,of=%lu,check=%s,skiperr=%lu,readerr=%lu,raw=",
-        r.min_us, r.max_us, r.last_size, r.overflow_count, ok ? "OK" : "FAIL", skip_errors, read_errors);
+    Serial.print("us,min=");
+    Serial.print(r.min_us);
+    Serial.print(",max=");
+    Serial.print(r.max_us);
+    Serial.print(",size=");
+    Serial.print(r.last_size);
+    Serial.print(",of=");
+    Serial.print(r.overflow_count);
+    Serial.print(",check=");
+    Serial.print(ok ? "OK" : "FAIL");
+    Serial.print(",skiperr=");
+    Serial.print(skip_errors);
+    Serial.print(",readerr=");
+    Serial.print(read_errors);
+    Serial.print(",raw=");
     printHash(raw_hash);
     Serial.print(",mirror=");
     printHash(mirror_hash);
@@ -712,7 +780,15 @@ static PartialRegion makeRegion(uint16_t* sub, int stride, int orientation, int 
 
 static void printApiResult(const char* name, int orientation, bool ok, uint32_t skip_errors, uint64_t h)
 {
-    Serial.printf("api=%s,ori=%s,check=%s,skiperr=%lu,hash=", name, orientationName(orientation), ok ? "OK" : "FAIL", skip_errors);
+    Serial.print("api=");
+    Serial.print(name);
+    Serial.print(",ori=");
+    Serial.print(orientationName(orientation));
+    Serial.print(",check=");
+    Serial.print(ok ? "OK" : "FAIL");
+    Serial.print(",skiperr=");
+    Serial.print(skip_errors);
+    Serial.print(",hash=");
     printHash(h);
     Serial.println();
 }
@@ -791,8 +867,15 @@ static void runDummyChecks()
     ok = ok && verifyReadDiff(dummy, fb_new, DiffBuffBase::PORTRAIT_240x320, 0, raw_write_hash, raw_write_pixels, read_errors);
     ok = ok && (raw_write_pixels == (uint32_t)(LX * (LY - 8))) && (raw_write_errors == 0) && (read_errors == 0);
 
-    Serial.printf("api=dummy,ori=rot0,check=%s,rawerr=%lu,readerr=%lu,pixels=%lu,hash=",
-        ok ? "OK" : "FAIL", raw_write_errors, read_errors, raw_write_pixels);
+    Serial.print("api=dummy,ori=rot0,check=");
+    Serial.print(ok ? "OK" : "FAIL");
+    Serial.print(",rawerr=");
+    Serial.print(raw_write_errors);
+    Serial.print(",readerr=");
+    Serial.print(read_errors);
+    Serial.print(",pixels=");
+    Serial.print(raw_write_pixels);
+    Serial.print(",hash=");
     printHash(raw_write_hash);
     Serial.println();
 }
@@ -834,7 +917,16 @@ void setup()
 
     Serial.println();
     Serial.println("ILI9341_T4 DiffBuff benchmark");
-    Serial.printf("pixels=%d warmup=%d iter=%d large=%d small=%d\n", NB_PIXELS, WARMUP, ITER, LARGE_DIFF_SIZE, SMALL_DIFF_SIZE);
+    Serial.print("pixels=");
+    Serial.print(NB_PIXELS);
+    Serial.print(" warmup=");
+    Serial.print(WARMUP);
+    Serial.print(" iter=");
+    Serial.print(ITER);
+    Serial.print(" large=");
+    Serial.print(LARGE_DIFF_SIZE);
+    Serial.print(" small=");
+    Serial.println(SMALL_DIFF_SIZE);
     Serial.println("CSV-ish fields: diff,scn,ori,gap,copy,mask,avg,min,max,size,of,check,skiperr,readerr,raw,mirror");
     Serial.println();
 
@@ -854,7 +946,8 @@ void setup()
     runUnalignedSuite();
 
     Serial.println();
-    Serial.printf("sink=%lu\n", sink);
+    Serial.print("sink=");
+    Serial.println(sink);
     Serial.println("Done.");
 }
 

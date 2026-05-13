@@ -109,7 +109,7 @@ struct Ball
     double x, y, dirx, diry, r; // position, direction, radius. 
     uint16_t color;
 
-    Ball()
+    void init()
         {
         r = unif() * 25; // random radius
         x = r; // start at the corner
@@ -160,6 +160,8 @@ Ball balls[99];
 void setup()
     {
     Serial.begin(9600);
+
+    for (auto& b : balls) b.init();
 
     tft.output(&Serial);                // output debug infos to serial port.     
     while (!tft.begin(SPI_SPEED));      // init the display

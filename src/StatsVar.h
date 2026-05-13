@@ -93,10 +93,20 @@ namespace T4Diff
             {
             if (outputStream)
                 {
-                if (with_precision)
-                    outputStream->printf("avg=%.2f%s [min=%d%s , max=%d%s] std=%.2f%s%s", avg(), unit, min(), unit, max(), unit, std(), unit, endl);
-                else
-                    outputStream->printf("avg=%.0f%s [min=%d%s , max=%d%s] std=%.0f%s%s", avg(), unit, min(), unit, max(), unit, std(), unit, endl);
+                const int digits = with_precision ? 2 : 0;
+                outputStream->print("avg=");
+                outputStream->print(avg(), digits);
+                outputStream->print(unit);
+                outputStream->print(" [min=");
+                outputStream->print(min());
+                outputStream->print(unit);
+                outputStream->print(" , max=");
+                outputStream->print(max());
+                outputStream->print(unit);
+                outputStream->print("] std=");
+                outputStream->print(std(), digits);
+                outputStream->print(unit);
+                outputStream->print(endl);
                 }
             }
 

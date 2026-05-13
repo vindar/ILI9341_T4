@@ -206,6 +206,33 @@ namespace ILI9341_T4
         _mirrorfb = nullptr; // force full redraw.
         _ongoingDiff = nullptr;
 
+        auto printPinBus = [this](const char* prefix, int pin, int bus)
+            {
+            _print(prefix);
+            _print(pin);
+            _print(" [SPI");
+            _print(bus);
+            _print("]\n");
+            };
+
+        auto printPin = [this](const char* prefix, int pin)
+            {
+            _print(prefix);
+            _print(pin);
+            _print('\n');
+            };
+
+        auto printMHz = [this](const char* prefix, uint32_t hz, const char* suffix)
+            {
+            _print(prefix);
+            _print(hz / 1000000);
+            _print('.');
+            const uint32_t frac = (hz % 1000000) / 10000;
+            if (frac < 10) _print('0');
+            _print(frac);
+            _print(suffix);
+            };
+
         if (_touch_cs != 255)
             { // set touch CS high to prevent interference.
             digitalWrite(_touch_cs, HIGH);
@@ -233,10 +260,12 @@ namespace ILI9341_T4
         if (SPI.pinIsMOSI(_mosi)) spinum_MOSI = 0;  else if (SPI1.pinIsMOSI(_mosi)) spinum_MOSI = 1; else if (SPI2.pinIsMOSI(_mosi)) spinum_MOSI = 2;
         if (spinum_MOSI < 0)
             {
-            _printf("\n*** ERROR: MOSI on pin %d is not a valid SPI pin ! ***\n\n", _mosi);
+            _print("\n*** ERROR: MOSI on pin ");
+            _print(_mosi);
+            _print(" is not a valid SPI pin ! ***\n\n");
             return false;
             }
-        else _printf("- MOSI on pin %d [SPI%d]\n", _mosi, spinum_MOSI);
+        else printPinBus("- MOSI on pin ", _mosi, spinum_MOSI);
 
         int spinum_MISO = -1; 
         if (_miso != 255)
@@ -244,14 +273,16 @@ namespace ILI9341_T4
             if (SPI.pinIsMISO(_miso)) spinum_MISO = 0;  else if (SPI1.pinIsMISO(_miso)) spinum_MISO = 1; else if (SPI2.pinIsMISO(_miso)) spinum_MISO = 2;
             if (spinum_MISO < 0)
                 {
-                _printf("\n*** ERROR: MISO on pin %d is not a valid SPI pin (or set PIN_MISO=255 if it is not connected to display) ! ***\n\n", _miso);
+                _print("\n*** ERROR: MISO on pin ");
+                _print(_miso);
+                _print(" is not a valid SPI pin (or set PIN_MISO=255 if it is not connected to display) ! ***\n\n");
                 return false;
                 } 
-            else _printf("- MISO on pin %d [SPI%d]\n", _miso, spinum_MISO);
+            else printPinBus("- MISO on pin ", _miso, spinum_MISO);
             }
         else
             {
-            _printf("- MISO not connected to display *** WARNING: VSync/Screen tearing protection is disabled *** !!!\n\n", _miso, spinum_MISO);
+            _print("- MISO not connected to display *** WARNING: VSync/Screen tearing protection is disabled *** !!!\n\n");
             spinum_MISO = spinum_MOSI;
             }
 
@@ -259,14 +290,16 @@ namespace ILI9341_T4
         if (SPI.pinIsSCK(_sclk)) spinum_SCK = 0;  else if (SPI1.pinIsSCK(_sclk)) spinum_SCK = 1; else if (SPI2.pinIsSCK(_sclk)) spinum_SCK = 2;
         if (spinum_SCK < 0)
             {
-            _printf("\n*** ERROR: SCK on pin %d is not a valid SPI pin ! ***\n\n", _sclk);
+            _print("\n*** ERROR: SCK on pin ");
+            _print(_sclk);
+            _print(" is not a valid SPI pin ! ***\n\n");
             return false;
             }
-        else _printf("- SCK on pin %d [SPI%d]\n", _sclk, spinum_SCK);
+        else printPinBus("- SCK on pin ", _sclk, spinum_SCK);
 
         if ((spinum_SCK != spinum_MISO) || (spinum_SCK != spinum_MOSI))
             {
-            _printf("\n*** ERROR: SCK, MISO and MOSI must be on the same SPI bus ! ***\n\n", _sclk);
+            _print("\n*** ERROR: SCK, MISO and MOSI must be on the same SPI bus ! ***\n\n");
             return false;
             }
 
@@ -274,19 +307,22 @@ namespace ILI9341_T4
             {
             _pspi = &SPI;
             _spi_num = 0; // Which buss is this spi on?
-            _pimxrt_spi = &IMXRT_LPSPI4_S; // Could hack our way to grab this from SPI object, but...        
+            _pimxrt_spi = &IMXRT_LPSPI4_S;
+            _spi_hardware = &SPIClass::spiclass_lpspi4_hardware;
             }
         else if (spinum_SCK == 1)
             {
             _pspi = &SPI1;
             _spi_num = 1; // Which buss is this spi on?
-            _pimxrt_spi = &IMXRT_LPSPI3_S; // Could hack our way to grab this from SPI object, but...
+            _pimxrt_spi = &IMXRT_LPSPI3_S;
+            _spi_hardware = &SPIClass::spiclass_lpspi3_hardware;
             }
         else 
             {
             _pspi = &SPI2;
             _spi_num = 2; // Which buss is this spi on?
-            _pimxrt_spi = &IMXRT_LPSPI1_S; // Could hack our way to grab this from SPI object, but...
+            _pimxrt_spi = &IMXRT_LPSPI1_S;
+            _spi_hardware = &SPIClass::spiclass_lpspi1_hardware;
             }
 
         // Make sure we have all of the proper SPI pins selected.
@@ -294,10 +330,6 @@ namespace ILI9341_T4
         _pspi->setSCK(_sclk);
         if (_miso != 255) _pspi->setMISO(_miso);
 
-        // Hack to get hold of the SPI Hardware information...
-        uint32_t* pa = (uint32_t*)((void*)_pspi);
-        _spi_hardware = (SPIClass::SPI_Hardware_t*)(void*)pa[1];
-        
         //
         // the next lines replace the command:  _pspi->begin();
         // but it does not affects the MISO pin (if unused).      
@@ -349,7 +381,7 @@ namespace ILI9341_T4
         // CS pin direct access via port.
         if (_cs < 255)
             {
-            _printf("- CS on pin %d\n", _cs);
+            printPin("- CS on pin ", _cs);
             _csport = portOutputRegister(_cs);
             _cspinmask = digitalPinToBitMask(_cs);
             pinMode(_cs, OUTPUT);
@@ -365,7 +397,7 @@ namespace ILI9341_T4
 
         if (_dc == 255)
             {
-            _printf("\n*** ERROR: DC pin cannot be left unconnected ! ***\n\n", _sclk);
+            _print("\n*** ERROR: DC pin cannot be left unconnected ! ***\n\n");
             return false;
             }
 
@@ -375,10 +407,18 @@ namespace ILI9341_T4
             {
             if (!_pspi->pinIsChipSelect(_dc))
                 {
-                _printf("\n*** ERROR: DC (here on pin %d) is not a valid cs pin for SPI%d ***\n\n", _dc, _spi_num);
+                _print("\n*** ERROR: DC (here on pin ");
+                _print(_dc);
+                _print(") is not a valid cs pin for SPI");
+                _print(_spi_num);
+                _print(" ***\n\n");
                 return false; // ERROR, DC is not a hardware CS pin for the SPI bus. 
                 }
-            _printf("- DC on pin %d [SPI%d] Hardware accelerated !\n", _dc, _spi_num);            
+            _print("- DC on pin ");
+            _print(_dc);
+            _print(" [SPI");
+            _print(_spi_num);
+            _print("] Hardware accelerated !\n");
             uint8_t dc_cs_index = _pspi->setCS(_dc);
             dc_cs_index--; // convert to 0 based
             _tcr_dc_assert = LPSPI_TCR_PCS(dc_cs_index);              
@@ -386,7 +426,9 @@ namespace ILI9341_T4
             }
         else
             {                                 
-            _printf("- DC on pin %d  >>>> *** No hardware acceleration : put DC on a hardware chip select pin for speedup *** \n", _dc, _spi_num);
+            _print("- DC on pin ");
+            _print(_dc);
+            _print("  >>>> *** No hardware acceleration : put DC on a hardware chip select pin for speedup *** \n");
             _tcr_dc_assert = LPSPI_TCR_PCS(1);
             _tcr_dc_not_assert = LPSPI_TCR_PCS(3);                                  
             _dcport = portOutputRegister(_dc);
@@ -413,11 +455,12 @@ namespace ILI9341_T4
 
         _maybeUpdateTCR(_tcr_dc_not_assert | LPSPI_TCR_FRAMESZ(7)); // drive DC high now. 
 
-        if (_rst < 255) _printf("- RST on pin %d\n", _rst); else _print("- RST pin not connected (set it to +3.3V).\n");
+        if (_rst < 255) printPin("- RST on pin ", _rst); else _print("- RST pin not connected (set it to +3.3V).\n");
         if (_touch_cs < 255)
             {
-            _printf("\n[Touchscreen is CONNECTED]\n- TOUCH_CS on pin %d\n", _touch_cs);
-            if (_touch_irq < 255) _printf("- TOUCH_IRQ on pin %d\n", _touch_irq); else _print("- TOUCH_IRQ not connected\n");
+            _print("\n[Touchscreen is CONNECTED]\n");
+            printPin("- TOUCH_CS on pin ", _touch_cs);
+            if (_touch_irq < 255) printPin("- TOUCH_IRQ on pin ", _touch_irq); else _print("- TOUCH_IRQ not connected\n");
             }
         else
             {
@@ -428,9 +471,11 @@ namespace ILI9341_T4
         if (_spi_clock < 0) _spi_clock = ILI9341_T4_DEFAULT_SPICLOCK;
         _spi_clock_read = spi_clock_read;
         if (_spi_clock_read < 0) _spi_clock_read = ILI9341_T4_DEFAULT_SPICLOCK_READ;
-        _printf("\n- SPI write speed : %.2fMhz\n", spi_clock / 1000000.0f);
-        _printf("- SPI read speed : %.2fMhz\n\n", spi_clock_read / 1000000.0f);
-        _printf("- IRQ priority : %d\n\n", _irq_priority);
+        printMHz("\n- SPI write speed : ", _spi_clock, "Mhz\n");
+        printMHz("- SPI read speed : ", _spi_clock_read, "Mhz\n\n");
+        _print("- IRQ priority : ");
+        _print(_irq_priority);
+        _print("\n\n");
 
         _rotation = 0; // default rotation
 
@@ -538,7 +583,7 @@ namespace ILI9341_T4
                 return false; 
                 }
             if (_spi_clock_read > 100000)_spi_clock_read /= 2;
-            _printf("Retrying connexion with slower SPI read speed : %.2fMhz", _spi_clock_read / 1000000.0f);
+            printMHz("Retrying connexion with slower SPI read speed : ", _spi_clock_read, "Mhz");
             delay(1000);
             }
         }
@@ -766,7 +811,18 @@ namespace ILI9341_T4
             {
             setRefreshMode(m);
             float r = getRefreshRate();
-            if (_miso == 255) _printf("- mode %u : %fHz\n", m, r); else _printf("- mode %u : %fHz (%u FPS with vsync_spacing = 2).\n", m, r, (uint32_t)round(r/2));
+            _print("- mode ");
+            _print((uint32_t)m);
+            _print(" : ");
+            if (_outputStream) _outputStream->print(r, 2);
+            _print("Hz");
+            if (_miso != 255)
+                {
+                _print(" (");
+                _print((uint32_t)round(r / 2));
+                _print(" FPS with vsync_spacing = 2).");
+                }
+            _print("\n");
             }
         _println("");
         setRefreshMode(om);
@@ -938,7 +994,9 @@ namespace ILI9341_T4
             {
             if (vsync_spacing > 0)
                 {// cannot use vsync if MISO line not set. 
-                _printf("*** WARNING: setVSyncSpacing(%d) called while PIN_MISO=255, reverting to vsync_spacing = 0 ***\n", vsync_spacing);
+                _print("*** WARNING: setVSyncSpacing(");
+                _print(vsync_spacing);
+                _print(") called while PIN_MISO=255, reverting to vsync_spacing = 0 ***\n");
                 vsync_spacing = 0; 
                 }
             }
@@ -1090,7 +1148,8 @@ namespace ILI9341_T4
                     _waitUpdateAsyncComplete(); // wait if there is still an update in progress                                 
                     _dummydiff1->computeDiff(_fb1, nullptr, fb, xmin, xmax, ymin, ymax, stride, _rotation, _diff_gap, true, _compare_mask); // create a diff and copy to fb1.
                     if (redrawNow) 
-                        {                         
+                        {
+                        bool update_ok = true;
                         if (_mirrorfb)
                             { // _fb1 mirrors the screen so we just need to draw the region 
                             _updateRectNow(fb, xmin, xmax, ymin, ymax, stride); // note that we can use the method with fb and not _fb1. ***** TODO: replace by an async draw
@@ -1098,9 +1157,9 @@ namespace ILI9341_T4
                         else
                             { // redraw everything, via DMA
                             _flush_cache(_fb1, ILI9341_T4_NB_PIXELS * 2);
-                            _updateAsync(_fb1, _dummydiff1); // launch update
+                            update_ok = _updateAsync(_fb1, _dummydiff1); // launch update
                             }
-                        _mirrorfb = _fb1;                         
+                        _mirrorfb = update_ok ? _fb1 : nullptr;
                         }
                     else
                         {
@@ -1126,8 +1185,8 @@ namespace ILI9341_T4
                     if (redrawNow)
                         {
                         _flush_cache(_fb1, ILI9341_T4_NB_PIXELS * 2);
-                        _updateAsync(_fb1, _diff1);
-                        _mirrorfb = _fb1;
+                        const bool update_ok = _updateAsync(_fb1, _diff1);
+                        _mirrorfb = update_ok ? _fb1 : nullptr;
                         _ongoingDiff = nullptr;
                         }
                     else
@@ -1154,8 +1213,8 @@ namespace ILI9341_T4
                     if (redrawNow)
                         {
                         _flush_cache(_fb1, ILI9341_T4_NB_PIXELS * 2);
-                        _updateAsync(_fb1, _diff1);
-                        _mirrorfb = _fb1;
+                        const bool update_ok = _updateAsync(_fb1, _diff1);
+                        _mirrorfb = update_ok ? _fb1 : nullptr;
                         _ongoingDiff = nullptr;
                         }
                     else
@@ -1173,8 +1232,7 @@ namespace ILI9341_T4
                     { // redraw everything
                     _dummydiff1->computeDiff(_fb1, fb, _rotation, _diff_gap, false, _compare_mask); // create a dummy diff
                     _flush_cache(_fb1, ILI9341_T4_NB_PIXELS * 2);
-                    _updateAsync(_fb1, _dummydiff1);
-                    _mirrorfb = _fb1; // now we mirror the screen !
+                    _mirrorfb = _updateAsync(_fb1, _dummydiff1) ? _fb1 : nullptr; // now we mirror the screen if the update was accepted.
                     }
                 return;
                 
@@ -1218,8 +1276,7 @@ namespace ILI9341_T4
                     _waitUpdateAsyncComplete(); // wait until update is done. 
                     _dummydiff1->computeDiff(_fb1, fb, getRotation(), _diff_gap, true, _compare_mask); // create a dummy diff and copy to fb1. 
                     _flush_cache(_fb1, ILI9341_T4_NB_PIXELS * 2);
-                    _updateAsync(_fb1, _dummydiff1); // launch update
-                    _mirrorfb = _fb1; // set as mirror
+                    _mirrorfb = _updateAsync(_fb1, _dummydiff1) ? _fb1 : nullptr; // set as mirror if the update was accepted.
                     return;
                     }
 
@@ -1230,15 +1287,14 @@ namespace ILI9341_T4
                         { // complete redraw needed. 
                         _dummydiff1->computeDiff(_fb1, fb, getRotation(), _diff_gap, true, _compare_mask); // create a dummy diff and copy to fb1. 
                         _flush_cache(_fb1, ILI9341_T4_NB_PIXELS * 2);
-                        _updateAsync(_fb1, _dummydiff1); // launch update
+                        _mirrorfb = _updateAsync(_fb1, _dummydiff1) ? _fb1 : nullptr; // launch update
                         }
                     else
                         { // diff redraw 
                         _diff1->computeDiff(_fb1, fb, getRotation(), _diff_gap, true, _compare_mask); // create a diff and copy to fb1. 
                         _flush_cache(_fb1, ILI9341_T4_NB_PIXELS * 2);
-                        _updateAsync(_fb1, _diff1); // launch update
+                        _mirrorfb = _updateAsync(_fb1, _diff1) ? _fb1 : nullptr; // launch update
                         }
-                    _mirrorfb = _fb1; // set as mirror
                     return;
                     }
 
@@ -1250,15 +1306,14 @@ namespace ILI9341_T4
                     DiffBuff::copyfb(_fb1, fb, getRotation()); // save the framebuffer in fb1               
                     _swapdiff();  // swap the diffs so that diff1 contain the new diff.                     
                     _flush_cache(_fb1, ILI9341_T4_NB_PIXELS * 2);
-                    _updateAsync(_fb1, _diff1); // launch update
+                    _mirrorfb = _updateAsync(_fb1, _diff1) ? _fb1 : nullptr; // launch update
                     }
                 else
                     {
                     _diff1->computeDiff(_fb1, fb, getRotation(), _diff_gap, true, _compare_mask); // create a diff and copy
                     _flush_cache(_fb1, ILI9341_T4_NB_PIXELS * 2);
-                    _updateAsync(_fb1, _diff1); // launch update
+                    _mirrorfb = _updateAsync(_fb1, _diff1) ? _fb1 : nullptr; // launch update
                     }
-                _mirrorfb = _fb1; // set as mirror
                 return;
                 }
             }
@@ -1497,7 +1552,7 @@ namespace ILI9341_T4
 
 
 
-    FLASHMEM void ILI9341Driver::_updateAsync(const uint16_t* fb, DiffBuffBase* diff)
+    FLASHMEM bool ILI9341Driver::_updateAsync(const uint16_t* fb, DiffBuffBase* diff)
         {
         /*
         //override and use _updateNow instead
@@ -1505,9 +1560,9 @@ namespace ILI9341_T4
         _rotation = 0;
         _updateNow(fb, diff);
         _rotation = o;
-        return;
+        return true;
         */
-        if ((fb == nullptr)|| (diff == nullptr)) return; // do not call callback for invalid param.
+        if ((fb == nullptr)|| (diff == nullptr)) return false; // do not call callback for invalid param.
         _waitUpdateAsyncComplete();
         _startframe(_vsync_spacing > 0);
         _stats_nb_uploaded_pixels = 0;
@@ -1535,7 +1590,7 @@ namespace ILI9341_T4
                 _touch_request_read = false;
                 }
             _dmaObject[_spi_num] = nullptr;
-            return;
+            return true;
             }
 
         int x = 0, y = 0, len = 0;
@@ -1564,16 +1619,26 @@ namespace ILI9341_T4
         if (_vsync_spacing <= 0)
             { // call next method asap
             _pauseUploadTime();
-            _setTimerIn(1, &ILI9341Driver::_subFrameTimerStartcb); // call now
+            if (!_setTimerIn(1, &ILI9341Driver::_subFrameTimerStartcb)) // call now
+                {
+                _abortAsyncUpdateNoTimer(false);
+                _pauseCpuTime();
+                return false;
+                }
             }
         else
             { // time the call of the next method with vsync 
             _pauseUploadTime();
-            _setTimerAt(_timeframestart + (_vsync_spacing - 1) * _period, &ILI9341Driver::_subFrameTimerStartcb); // call at start of screen refresh. 
+            if (!_setTimerAt(_timeframestart + (_vsync_spacing - 1) * _period, &ILI9341Driver::_subFrameTimerStartcb)) // call at start of screen refresh.
+                {
+                _abortAsyncUpdateNoTimer(false);
+                _pauseCpuTime();
+                return false;
+                }
             }
 
         _pauseCpuTime();
-        return;
+        return true;
         }
 
 
@@ -1585,7 +1650,12 @@ namespace ILI9341_T4
         if (_vsync_spacing <= 0)
             {
             _pauseUploadTime();
-            _setTimerIn(1, &ILI9341Driver::_subFrameTimerStartcb2);
+            if (!_setTimerIn(1, &ILI9341Driver::_subFrameTimerStartcb2))
+                {
+                _abortAsyncUpdateNoTimer(false);
+                _pauseCpuTime();
+                return;
+                }
             }
         else
             {
@@ -1602,7 +1672,12 @@ namespace ILI9341_T4
                 if (t2 < t) t = 0;  // late, start right away. 
                 }
             _pauseUploadTime();
-            _setTimerIn(t, &ILI9341Driver::_subFrameTimerStartcb2); // call when ready to start transfer.        
+            if (!_setTimerIn(t, &ILI9341Driver::_subFrameTimerStartcb2)) // call when ready to start transfer.
+                {
+                _abortAsyncUpdateNoTimer(false);
+                _pauseCpuTime();
+                return;
+                }
             }
         _pauseCpuTime();
         return;
@@ -1631,7 +1706,7 @@ namespace ILI9341_T4
         int x = 0, y = 0, len = 0;
         int asl = 2 * ILI9341_T4_TFTHEIGHT; // make sure readDiff returns 0.  (_vsync_spacing > 0) ? _slinitpos  : (2 * ILI9341_T4_TFTHEIGHT);
         int r = _diff->readDiff(x, y, len, asl);
-        //Serial.printf("x= %d y=%d len=%d r=%d asl=%d\n",x,y,len,r, asl);  // debugging
+        // Debugging point for x/y/len/r/asl.
         if ((r != 0)||(len == 0)||(x != _prev_caset_x)||(y != _prev_paset_y))
             { // this should not happen, but try to fail gracefully.            
             _endframe();
@@ -1741,7 +1816,12 @@ namespace ILI9341_T4
             //while (_pimxrt_spi->FSR & 0x1f);        // wait for transmit fifo to be empty
             //while (_pimxrt_spi->SR & LPSPI_SR_MBF); // wait while spi bus is busy. 
             _pauseUploadTime();
-            _setTimerIn(t, &ILI9341Driver::_subFrameInterruptDiff2);
+            if (!_setTimerIn(t, &ILI9341Driver::_subFrameInterruptDiff2))
+                {
+                _abortAsyncUpdateNoTimer(true);
+                _pauseCpuTime();
+                return;
+                }
             _pauseCpuTime();            
             return;
             }
@@ -1882,6 +1962,37 @@ namespace ILI9341_T4
 
     ILI9341Driver* volatile ILI9341Driver::_pitObj[4] = {nullptr, nullptr, nullptr, nullptr};   // definition 
 
+    FLASHMEM void ILI9341Driver::_abortAsyncUpdateNoTimer(bool spi_transaction_active)
+        {
+        _print("*** WARNING: ILI9341Driver async update aborted: no PIT IntervalTimer available. ***\n");
+        _print("    All PIT timers may already be in use; screen mirror state invalidated.\n");
+
+        _it.end();
+        _istimer = false;
+        _dmatx.disable();
+        _dmatx.clearInterrupt();
+        _dmatx.clearComplete();
+
+        if (spi_transaction_active)
+            {
+            while (_pimxrt_spi->FSR & 0x1f);        // wait for transmit fifo to be empty
+            while (_pimxrt_spi->SR & LPSPI_SR_MBF); // wait while spi bus is busy.
+            _pimxrt_spi->FCR = LPSPI_FCR_TXWATER(15);
+            _pimxrt_spi->IER = 0;
+            _pimxrt_spi->DER = 0;
+            _pimxrt_spi->CR = LPSPI_CR_MEN | LPSPI_CR_RRF | LPSPI_CR_RTF;
+            _pimxrt_spi->SR = 0x3f00;
+            _endSPITransaction();
+            }
+
+        _mirrorfb = nullptr;
+        _ongoingDiff = nullptr;
+        _touch_request_read = false;
+        _dmaObject[_spi_num] = nullptr;
+        _dma_state = ILI9341_T4_DMA_IDLE;
+        }
+
+
     FLASHMEM void ILI9341Driver::_timerinit()
         {
         _istimer = false; 
@@ -2014,11 +2125,34 @@ namespace ILI9341_T4
                 const uint32_t ier = _pimxrt_spi->IER;
                 if (!warning_printed)
                     {
+                    const auto printHex8 = [&](uint32_t v)
+                        {
+                        static const char hex[] = "0123456789ABCDEF";
+                        for (int shift = 28; shift >= 0; shift -= 4) _print(hex[(v >> shift) & 0x0F]);
+                        };
+                    const auto printFlag = [&](uint32_t v)
+                        {
+                        _print(v ? 1 : 0);
+                        };
                     _print("***  WARNING: hanging in  ILI9341Driver::_waitTransmitComplete() ...***\n");
-                    _printf("    pending_rx=%u elapsed=%uus spi=%uHz\n", (uint32_t)_pending_rx_count, (uint32_t)em, _spi_clock);
-                    _printf("    SR=%08lX FSR=%08lX RSR=%08lX CR=%08lX TCR=%08lX\n", (unsigned long)sr, (unsigned long)fsr, (unsigned long)rsr, (unsigned long)cr, (unsigned long)tcr);
-                    _printf("    FCR=%08lX DER=%08lX IER=%08lX TXCOUNT=%u RXCOUNT=%u\n", (unsigned long)fcr, (unsigned long)der, (unsigned long)ier, (uint32_t)(fsr & 0x1F), (uint32_t)rx_count);
-                    _printf("    flags: MBF=%u TDF=%u RDF=%u TCF=%u RXEMPTY=%u\n", (uint32_t)((sr & LPSPI_SR_MBF) != 0), (uint32_t)((sr & LPSPI_SR_TDF) != 0), (uint32_t)((sr & LPSPI_SR_RDF) != 0), (uint32_t)((sr & LPSPI_SR_TCF) != 0), (uint32_t)((rsr & LPSPI_RSR_RXEMPTY) != 0));
+                    _print("    pending_rx="); _print((uint32_t)_pending_rx_count);
+                    _print(" elapsed="); _print((uint32_t)em);
+                    _print("us spi="); _print(_spi_clock); _print("Hz\n");
+                    _print("    SR="); printHex8(sr);
+                    _print(" FSR="); printHex8(fsr);
+                    _print(" RSR="); printHex8(rsr);
+                    _print(" CR="); printHex8(cr);
+                    _print(" TCR="); printHex8(tcr); _print("\n");
+                    _print("    FCR="); printHex8(fcr);
+                    _print(" DER="); printHex8(der);
+                    _print(" IER="); printHex8(ier);
+                    _print(" TXCOUNT="); _print((uint32_t)(fsr & 0x1F));
+                    _print(" RXCOUNT="); _print((uint32_t)rx_count); _print("\n");
+                    _print("    flags: MBF="); printFlag(sr & LPSPI_SR_MBF);
+                    _print(" TDF="); printFlag(sr & LPSPI_SR_TDF);
+                    _print(" RDF="); printFlag(sr & LPSPI_SR_RDF);
+                    _print(" TCF="); printFlag(sr & LPSPI_SR_TCF);
+                    _print(" RXEMPTY="); printFlag(rsr & LPSPI_RSR_RXEMPTY); _print("\n");
                     warning_printed = true;
                     }
                 if (((sr & LPSPI_SR_MBF) == 0) && ((fsr & 0x1f) == 0))
@@ -2516,21 +2650,45 @@ namespace ILI9341_T4
         if (_outputStream)
             {
             //_waitUpdateAsyncComplete();
+            auto printFloat = [this](float value, int digits)
+                {
+                _outputStream->print(value, digits);
+                };
+
             _print("----------------- ILI9341Driver Stats ----------------\n");
 
             _print("[Hardware]\n");
-            _printf("- SPI BUS            : SPI%u [MOSI=%u , MISO=%u, SCK=%u, CS=%u]\n", _spi_num, _mosi, _miso, _sclk, _cs );
-            _printf("- DC pin             : %u ", _dc);
+            _print("- SPI BUS            : SPI");
+            _print(_spi_num);
+            _print(" [MOSI=");
+            _print(_mosi);
+            _print(" , MISO=");
+            _print(_miso);
+            _print(", SCK=");
+            _print(_sclk);
+            _print(", CS=");
+            _print(_cs);
+            _print("]\n");
+
+            _print("- DC pin             : ");
+            _print(_dc);
+            _print(' ');
             if (_hardware_dc)
                 {
-                _printf(" *** Hardware acceleration enabled ***\n", _dc);
+                _print(" *** Hardware acceleration enabled ***\n");
                 }
             else
                 {
-                _printf("\n", _dc);
+                _print('\n');
                 }
-            _printf("- SPI speed          : write=%u  read=%u\n", _spi_clock, _spi_clock_read);
-            _printf("- IRQ priority       : %d\n", _irq_priority);
+            _print("- SPI speed          : write=");
+            _print(_spi_clock);
+            _print("  read=");
+            _print(_spi_clock_read);
+            _print('\n');
+            _print("- IRQ priority       : ");
+            _print(_irq_priority);
+            _print('\n');
 
             _print( "- XPT2046 Touchscreen: ");
             if (_touch_cs == 255)
@@ -2539,7 +2697,11 @@ namespace ILI9341_T4
                 }
             else
                 {
-                _printf("enabled [TOUCH_CS=%u, TOUCH_IRQ=%u]\n", _touch_cs, _touch_irq);
+                _print("enabled [TOUCH_CS=");
+                _print(_touch_cs);
+                _print(", TOUCH_IRQ=");
+                _print(_touch_irq);
+                _print("]\n");
                 }
 
             _print("\n[Configuration]\n");
@@ -2552,15 +2714,22 @@ namespace ILI9341_T4
                 case 3: _print("3 (LANDSCAPE_320x240_FLIPPED)\n"); break;
                 }
 
-            _printf("- refresh rate       : %.1fHz  (mode %u)\n", getRefreshRate(), getRefreshMode());
+            _print("- refresh rate       : ");
+            printFloat(getRefreshRate(), 1);
+            _print("Hz  (mode ");
+            _print(getRefreshMode());
+            _print(")\n");
             int m = bufferingMode();
-            _printf("- buffering mode     : %u", m);
+            _print("- buffering mode     : ");
+            _print(m);
             switch (m)
                 {
                 case NO_BUFFERING:  _print(" (NO BUFFERING)\n"); break;
                 case DOUBLE_BUFFERING: _print(" (DOUBLE BUFFERING)\n"); break;
                 }
-            _printf("- vsync_spacing      : %i ", _vsync_spacing);
+            _print("- vsync_spacing      : ");
+            _print(_vsync_spacing);
+            _print(' ');
             if (_miso == 255)
                 {
                 _print(" (VSYNC ALWAYS DISABLED BECAUSE MISO_PIN=255).\n");
@@ -2579,7 +2748,10 @@ namespace ILI9341_T4
             else if (_vsync_spacing == 0)
                 _print("max fps [do not drop frames]\n");
             else
-                _printf("%.1fHz [=refresh_rate/vsync_spacing]\n", getRefreshRate() / _vsync_spacing);
+                {
+                printFloat(getRefreshRate() / _vsync_spacing, 1);
+                _print("Hz [=refresh_rate/vsync_spacing]\n");
+                }
 
             if (diffUpdateActive())
                 {
@@ -2591,7 +2763,9 @@ namespace ILI9341_T4
                     {
                     _print("- diff. updates      : ENABLED - 1 diff buffer.\n");
                     }
-                _printf("- diff [gap]         : %u\n", _diff_gap);
+                _print("- diff [gap]         : ");
+                _print(_diff_gap);
+                _print('\n');
                 if (_compare_mask == 0)
                     {
                     _print("- diff [compare_mask]: STRICT COMPARISON.");
@@ -2615,19 +2789,51 @@ namespace ILI9341_T4
                 }
 
             _print("\n\n[Statistics]\n");
-            _printf("- average framerate  : %.1f FPS  (%u frames in %ums)\n", statsFramerate(), statsNbFrames(), statsTotalTime());
-            _printf("- instant. framerate : %d FPS  [min=%d , max=%d] std=%.1f\n", statsCurrentFPS(), statsFPS().min(), statsFPS().max(), statsFPS().std());
+            _print("- average framerate  : ");
+            printFloat(statsFramerate(), 1);
+            _print(" FPS  (");
+            _print(statsNbFrames());
+            _print(" frames in ");
+            _print(statsTotalTime());
+            _print("ms)\n");
+
+            _print("- instant. framerate : ");
+            _print(statsCurrentFPS());
+            _print(" FPS  [min=");
+            _print(statsFPS().min());
+            _print(" , max=");
+            _print(statsFPS().max());
+            _print("] std=");
+            printFloat(statsFPS().std(), 1);
+            _print('\n');
+
+            const float upload_time = _statsvar_uploadtime.avg();
+            const float upload_rate = (upload_time > 0.0f) ? (1000000.0f / upload_time) : 0.0f;
             if (diffUpdateActive())
-                _printf("- upload rate        : %.1f FPS  (%.2fx compared to full redraw)\n", 1000000.0f / _statsvar_uploadtime.avg(), statsDiffSpeedUp());
+                {
+                _print("- upload rate        : ");
+                printFloat(upload_rate, 1);
+                _print(" FPS  (");
+                printFloat(statsDiffSpeedUp(), 2);
+                _print("x compared to full redraw)\n");
+                }
             else
-                _printf("- upload rate        : %.1f FPS\n", 1000000.0f / _statsvar_uploadtime.avg());
+                {
+                _print("- upload rate        : ");
+                printFloat(upload_rate, 1);
+                _print(" FPS\n");
+                }
             _print("- upload time / frame: "); _statsvar_uploadtime.print("us", "\n", _outputStream);
             _print("- CPU time / frame   : "); _statsvar_cputime.print("us", "\n", _outputStream);
             _print("- pixels / frame     : "); _statsvar_uploaded_pixels.print("", "\n", _outputStream);
             _print("- transact. / frame  : "); _statsvar_transactions.print("", "\n", _outputStream);
             if (_vsync_spacing > 0)
                 {
-                _printf("- teared frames      : %u (%.1f%%)\n", statsNbTeared(), 100 * statsRatioTeared());
+                _print("- teared frames      : ");
+                _print(statsNbTeared());
+                _print(" (");
+                printFloat(100 * statsRatioTeared(), 1);
+                _print("%)\n");
                 _print("- real vsync spacing : "); _statsvar_vsyncspacing.print("", "\n", _outputStream, true);
                 _print("- margin / frame     : "); _statsvar_margin.print("", "\n", _outputStream);
                 }
@@ -2989,7 +3195,9 @@ namespace ILI9341_T4
             _uploadText("Touch the center of the", 50, 170, BLUE, WHITE, (void*)(&font_ILI9341_T4_OpenSans_Bold_12), true);
             _uploadText("red square in the corner", 47, 185, BLUE, WHITE, (void*)(&font_ILI9341_T4_OpenSans_Bold_12), true);
             _uploadText(tn, 105, 215, 31, 0xFFFF, (void*)(&font_ILI9341_T4_OpenSans_Bold_16), true);            
-            _printf("\n- corner %s: touch the center of the red rectangle... ", tn);
+            _print("\n- corner ");
+            _print(tn);
+            _print(": touch the center of the red rectangle... ");
             switch (i)
                 {
                 case 0:
@@ -3011,7 +3219,13 @@ namespace ILI9341_T4
             int j = (i + 2) % 4;
             delay(200);
             _calibTouch(x[j], y[j], z[j]);
-            _printf("\n%d  %d  %d\n", x[j], y[j], z[j]);
+            _print("\n");
+            _print(x[j]);
+            _print("  ");
+            _print(y[j]);
+            _print("  ");
+            _print(z[j]);
+            _print("\n");
             }
 
         clear(WHITE);  
@@ -3062,12 +3276,41 @@ namespace ILI9341_T4
                         {
                         // done !
                         _print("\n\nDONE !");
-                        _printf("\n\nCalibration values = {%d, %d, %d, %d }\n\n", touch_calib[0], touch_calib[1], touch_calib[2], touch_calib[3]);
+                        _print("\n\nCalibration values = {");
+                        _print(touch_calib[0]);
+                        _print(", ");
+                        _print(touch_calib[1]);
+                        _print(", ");
+                        _print(touch_calib[2]);
+                        _print(", ");
+                        _print(touch_calib[3]);
+                        _print(" }\n\n");
                         
                         clear(WHITE);
 
                         char tt[50] = { 0 };
-                        sprintf(tt, "{ %i ,  %i ,  %i ,  %i }", touch_calib[0], touch_calib[1], touch_calib[2], touch_calib[3]);
+                        char* p = tt;
+                        const char* const end = tt + sizeof(tt) - 1;
+                        const auto appendText = [&](const char* s)
+                            {
+                            while ((*s) && (p < end)) *p++ = *s++;
+                            };
+                        const auto appendInt = [&](int v)
+                            {
+                            char b[12];
+                            itoa(v, b, 10);
+                            appendText(b);
+                            };
+                        appendText("{ ");
+                        appendInt(touch_calib[0]);
+                        appendText(" ,  ");
+                        appendInt(touch_calib[1]);
+                        appendText(" ,  ");
+                        appendInt(touch_calib[2]);
+                        appendText(" ,  ");
+                        appendInt(touch_calib[3]);
+                        appendText(" }");
+                        *p = 0;
 
                         int minx, maxx, miny, maxy;
                         _measureText(tt, 0, 0, minx, maxx, miny, maxy, (void*)(&font_ILI9341_T4_OpenSans_Bold_16), false);
