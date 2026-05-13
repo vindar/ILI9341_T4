@@ -75,7 +75,7 @@ namespace ILI9341_T4
             {
             _count++;
             _sum += val;
-            _sumsqr += (val * val);
+            _sumsqr += ((int64_t)val * val);
             if (val < _min) _min = val; 
             if (val > _max) _max = val;
             }
