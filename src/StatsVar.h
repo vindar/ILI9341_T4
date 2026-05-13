@@ -1,6 +1,5 @@
 /******************************************************************************
-*  ILI9341_T4 library for driving an ILI9341 screen via SPI with a Teensy 4/4.1
-*  Implements vsync and differential updates from a memory framebuffer.
+*  Generic statistics helper used by T4 display drivers.
 *
 *  Copyright (c) 2020 Arvind Singh.  All right reserved.
 *
@@ -18,8 +17,8 @@
 *  License along with this library; if not, write to the Free Software
 *  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 *******************************************************************************/
-#ifndef _ILI9341_T4_STATSVAR_H_
-#define _ILI9341_T4_STATSVAR_H_
+#ifndef _T4DIFF_STATSVAR_H_
+#define _T4DIFF_STATSVAR_H_
 
 // only C++, no plain C
 #ifdef __cplusplus
@@ -28,9 +27,15 @@
 #include <stdint.h>
 #include <Arduino.h>
 
-#define ILI9341_T4_ALWAYS_INLINE __attribute__((always_inline))
+#ifndef T4DIFF_ALWAYS_INLINE
+#define T4DIFF_ALWAYS_INLINE __attribute__((always_inline))
+#endif
 
-namespace ILI9341_T4
+#ifndef ILI9341_T4_ALWAYS_INLINE
+#define ILI9341_T4_ALWAYS_INLINE T4DIFF_ALWAYS_INLINE
+#endif
+
+namespace T4Diff
 {
 
 
@@ -71,7 +76,7 @@ namespace ILI9341_T4
         /**
          * Add a new value to the sequence.
          **/
-        void push(int32_t val)  ILI9341_T4_ALWAYS_INLINE
+        void push(int32_t val) T4DIFF_ALWAYS_INLINE
             {
             _count++;
             _sum += val;
@@ -145,6 +150,12 @@ namespace ILI9341_T4
 
 
 
+}
+
+
+namespace ILI9341_T4
+{
+    using StatsVar = T4Diff::StatsVar;
 }
 
 #endif

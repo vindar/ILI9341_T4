@@ -1,8 +1,8 @@
 /*
  * ILI9341_T4 DiffBuff benchmark and correctness check.
  *
- * This sketch does not use the display or SPI. It benchmarks only the
- * DiffBuff::computeDiff() phase and checks the generated raw diff stream.
+ * This sketch does not use the display or SPI. It benchmarks the
+ * DiffBuff::computeDiff() phase and checks raw/read/copy helper paths.
  */
 
 #include <Arduino.h>
@@ -25,6 +25,16 @@ DMAMEM uint16_t fb_new[NB_PIXELS + 1];
 
 DiffBuffStatic<LARGE_DIFF_SIZE> diff_large;
 DiffBuffStatic<SMALL_DIFF_SIZE> diff_small;
+DiffBuffStatic<LARGE_DIFF_SIZE> diff_aux;
+
+static constexpr int SUB_STRIDE = 97;
+static constexpr int SUBA_W = 53;
+static constexpr int SUBA_H = 41;
+static constexpr int SUBB_W = 31;
+static constexpr int SUBB_H = 29;
+
+DMAMEM uint16_t sub_a[SUB_STRIDE * SUBA_H];
+DMAMEM uint16_t sub_b[SUB_STRIDE * SUBB_H];
 
 volatile uint32_t sink = 0;
 
@@ -44,6 +54,17 @@ struct ScenarioDef
     const char* name;
     Scenario scenario;
     uint16_t compare_mask;
+};
+
+struct PartialRegion
+{
+    const uint16_t* sub;
+    int xmin;
+    int xmax;
+    int ymin;
+    int ymax;
+    int stride;
+    int orientation;
 };
 
 struct BenchResult
@@ -170,10 +191,100 @@ static uint16_t canonicalSourcePixel(const uint16_t* fb, int orientation, int n)
     return 0;
 }
 
+static void canonicalToSourceXY(int orientation, int x, int y, int& sx, int& sy)
+{
+    switch (orientation)
+    {
+    case DiffBuffBase::PORTRAIT_240x320:
+        sx = x;
+        sy = y;
+        return;
+    case DiffBuffBase::LANDSCAPE_320x240:
+        sx = y;
+        sy = LX - 1 - x;
+        return;
+    case DiffBuffBase::PORTRAIT_240x320_FLIPPED:
+        sx = LX - 1 - x;
+        sy = LY - 1 - y;
+        return;
+    case DiffBuffBase::LANDSCAPE_320x240_FLIPPED:
+        sx = LY - 1 - y;
+        sy = x;
+        return;
+    }
+    sx = 0;
+    sy = 0;
+}
+
+static uint16_t canonicalBasePixel(int n)
+{
+    const uint32_t y = n / LX;
+    const uint32_t x = n - (LX * y);
+    return basePixel(x, y);
+}
+
+static uint16_t subPixelValue(uint32_t sx, uint32_t sy, uint32_t salt)
+{
+    return (uint16_t)(basePixel(sx + 3 * salt + 1, sy + 5 * salt + 7) ^ (0x5a5a + salt));
+}
+
+static void fillCanonicalBase(uint16_t* fb)
+{
+    for (int n = 0; n < NB_PIXELS; n++)
+    {
+        fb[n] = canonicalBasePixel(n);
+    }
+}
+
+static void fillSubBuffer(uint16_t* sub, int stride, int xmin, int ymin, int w, int h, uint32_t salt)
+{
+    for (int y = 0; y < h; y++)
+    {
+        uint16_t* row = sub + stride * y;
+        for (int x = 0; x < w; x++)
+        {
+            row[x] = subPixelValue(xmin + x, ymin + y, salt);
+        }
+    }
+}
+
+static bool regionPixel(const PartialRegion& region, int n, uint16_t& pixel)
+{
+    const int y = n / LX;
+    const int x = n - (LX * y);
+    int sx = 0;
+    int sy = 0;
+    canonicalToSourceXY(region.orientation, x, y, sx, sy);
+    if ((sx < region.xmin) || (sx > region.xmax) || (sy < region.ymin) || (sy > region.ymax))
+    {
+        return false;
+    }
+    pixel = region.sub[(sx - region.xmin) + region.stride * (sy - region.ymin)];
+    return true;
+}
+
+static uint16_t partialFinalPixel(const PartialRegion* regions, int nb_regions, int n)
+{
+    uint16_t pixel = 0;
+    for (int i = nb_regions - 1; i >= 0; i--)
+    {
+        if (regionPixel(regions[i], n, pixel)) return pixel;
+    }
+    return canonicalBasePixel(n);
+}
+
 static uint64_t hashStep(uint64_t h, uint16_t v)
 {
     h ^= v;
     h *= 1099511628211ull;
+    return h;
+}
+
+static uint64_t hashWritePixel(uint64_t h, int pos, uint16_t v)
+{
+    h = hashStep(h, (uint16_t)pos);
+    h = hashStep(h, (uint16_t)(pos >> 16));
+    h = hashStep(h, v);
     return h;
 }
 
@@ -252,6 +363,172 @@ static bool verifyRawDiff(DiffBuff& diff, const uint16_t* old_fb, const uint16_t
     return (pos == NB_PIXELS);
 }
 
+static bool hashRawWrites(DiffBuffBase& diff, const uint16_t* new_fb, int orientation, uint16_t compare_mask, uint64_t& out_hash, uint32_t& out_pixels, uint32_t& errors)
+{
+    const uint16_t mask = compare_mask ? compare_mask : 0xffff;
+    uint64_t h = 1469598103934665603ull;
+    int pos = 0;
+    out_pixels = 0;
+    errors = 0;
+
+    diff.initRaw();
+    while (pos < NB_PIXELS)
+    {
+        int nbwrite = 0;
+        int nbskip = 0;
+        diff.readRaw(nbwrite, nbskip);
+        if ((nbwrite == 0) && (nbskip > NB_PIXELS)) break;
+        if (nbwrite > NB_PIXELS)
+        {
+            nbwrite = NB_PIXELS - pos;
+            nbskip = 0;
+        }
+        if ((nbwrite < 0) || (nbskip < 0) || (pos + nbwrite > NB_PIXELS))
+        {
+            errors++;
+            break;
+        }
+        for (int i = 0; i < nbwrite; i++, pos++)
+        {
+            h = hashWritePixel(h, pos, canonicalSourcePixel(new_fb, orientation, pos) & mask);
+            out_pixels++;
+        }
+        if (pos + nbskip > NB_PIXELS)
+        {
+            errors++;
+            break;
+        }
+        pos += nbskip;
+    }
+
+    out_hash = h;
+    return errors == 0;
+}
+
+static bool verifyReadDiff(DiffBuffBase& diff, const uint16_t* new_fb, int orientation, uint16_t compare_mask, uint64_t expected_hash, uint32_t expected_pixels,
+    uint32_t& read_errors)
+{
+    const uint16_t mask = compare_mask ? compare_mask : 0xffff;
+    uint64_t h = 1469598103934665603ull;
+    uint32_t pixels = 0;
+    int last_end = 0;
+    int scanline = 0;
+    int guard = 0;
+    read_errors = 0;
+
+    const int expected_start = diff.scanlineStartInit();
+    diff.initRead();
+
+    while (++guard < 10000)
+    {
+        int x = 0;
+        int y = 0;
+        int len = 0;
+        const int r = diff.readDiff(x, y, len, scanline);
+
+        if (r < 0) break;
+        if (r > 0)
+        {
+            if (len != 0) read_errors++;
+            if ((expected_start >= 0) && (scanline == 0) && (r != expected_start)) read_errors++;
+            scanline = r;
+            continue;
+        }
+
+        if ((len <= 0) || (x < 0) || (x >= LX) || (y < 0) || (y >= LY))
+        {
+            read_errors++;
+            break;
+        }
+
+        const int pos = x + LX * y;
+        if ((pos < last_end) || (pos + len > NB_PIXELS))
+        {
+            read_errors++;
+            break;
+        }
+
+        for (int i = 0; i < len; i++)
+        {
+            h = hashWritePixel(h, pos + i, canonicalSourcePixel(new_fb, orientation, pos + i) & mask);
+        }
+        pixels += len;
+        last_end = pos + len;
+    }
+
+    if (guard >= 10000) read_errors++;
+    if (pixels != expected_pixels) read_errors++;
+    if (h != expected_hash) read_errors++;
+    return read_errors == 0;
+}
+
+static bool verifyRawPartial(DiffBuffBase& diff, const PartialRegion* regions, int nb_regions, uint64_t& out_hash, uint32_t& skip_errors)
+{
+    uint64_t h = 1469598103934665603ull;
+    int pos = 0;
+    skip_errors = 0;
+
+    diff.initRaw();
+    while (pos < NB_PIXELS)
+    {
+        int nbwrite = 0;
+        int nbskip = 0;
+        diff.readRaw(nbwrite, nbskip);
+
+        if ((nbwrite == 0) && (nbskip > NB_PIXELS))
+        {
+            while (pos < NB_PIXELS)
+            {
+                if (canonicalBasePixel(pos) != partialFinalPixel(regions, nb_regions, pos)) skip_errors++;
+                h = hashStep(h, canonicalBasePixel(pos));
+                pos++;
+            }
+            break;
+        }
+        if (nbwrite > NB_PIXELS)
+        {
+            nbwrite = NB_PIXELS - pos;
+            nbskip = 0;
+        }
+        if ((nbwrite < 0) || (nbskip < 0) || (pos + nbwrite > NB_PIXELS))
+        {
+            out_hash = h;
+            return false;
+        }
+
+        for (int i = 0; i < nbwrite; i++, pos++)
+        {
+            h = hashStep(h, partialFinalPixel(regions, nb_regions, pos));
+        }
+        if (pos + nbskip > NB_PIXELS)
+        {
+            out_hash = h;
+            return false;
+        }
+        for (int i = 0; i < nbskip; i++, pos++)
+        {
+            if (canonicalBasePixel(pos) != partialFinalPixel(regions, nb_regions, pos)) skip_errors++;
+            h = hashStep(h, canonicalBasePixel(pos));
+        }
+    }
+
+    out_hash = h;
+    return pos == NB_PIXELS;
+}
+
+static bool verifyMirrorPartial(const uint16_t* fb, const PartialRegion* regions, int nb_regions, uint64_t& out_hash)
+{
+    uint64_t h = 1469598103934665603ull;
+    uint64_t expected = 1469598103934665603ull;
+    for (int n = 0; n < NB_PIXELS; n++)
+    {
+        h = hashStep(h, fb[n]);
+        expected = hashStep(expected, partialFinalPixel(regions, nb_regions, n));
+    }
+    out_hash = h;
+    return h == expected;
+}
+
 static bool verifyMirror(const uint16_t* old_fb, const uint16_t* new_fb, int orientation, uint16_t compare_mask, uint64_t& out_hash)
 {
     const uint16_t mask = compare_mask ? compare_mask : 0xffff;
@@ -276,7 +553,7 @@ static void prepareCase(uint16_t* old_fb, uint16_t* new_fb, Scenario scenario, i
 }
 
 static bool checkCaseWithBuffers(DiffBuff& diff, uint16_t* old_fb, uint16_t* new_fb, Scenario scenario, int orientation, int gap, uint16_t compare_mask,
-    uint64_t& raw_hash, uint64_t& mirror_hash, uint32_t& skip_errors)
+    uint64_t& raw_hash, uint64_t& mirror_hash, uint32_t& skip_errors, uint32_t& read_errors)
 {
     prepareCase(old_fb, new_fb, scenario, orientation);
     diff.computeDiff(old_fb, new_fb, orientation, gap, false, compare_mask);
@@ -285,16 +562,24 @@ static bool checkCaseWithBuffers(DiffBuff& diff, uint16_t* old_fb, uint16_t* new
     bool ok_raw = verifyRawDiff(diff, old_fb, new_fb, orientation, compare_mask, raw_hash, skip_errors);
     ok_raw = ok_raw && (raw_hash == expected) && (skip_errors == 0);
 
+    uint64_t raw_write_hash = 0;
+    uint32_t raw_write_pixels = 0;
+    uint32_t raw_write_errors = 0;
+    bool ok_read = hashRawWrites(diff, new_fb, orientation, compare_mask, raw_write_hash, raw_write_pixels, raw_write_errors);
+    ok_read = ok_read && verifyReadDiff(diff, new_fb, orientation, compare_mask, raw_write_hash, raw_write_pixels, read_errors);
+    read_errors += raw_write_errors;
+
     prepareCase(old_fb, new_fb, scenario, orientation);
     diff.computeDiff(old_fb, new_fb, orientation, gap, true, compare_mask);
     const bool ok_mirror = verifyMirror(old_fb, new_fb, orientation, compare_mask, mirror_hash);
 
-    return ok_raw && ok_mirror;
+    return ok_raw && ok_read && ok_mirror;
 }
 
-static bool checkCase(DiffBuff& diff, Scenario scenario, int orientation, int gap, uint16_t compare_mask, uint64_t& raw_hash, uint64_t& mirror_hash, uint32_t& skip_errors)
+static bool checkCase(DiffBuff& diff, Scenario scenario, int orientation, int gap, uint16_t compare_mask, uint64_t& raw_hash, uint64_t& mirror_hash,
+    uint32_t& skip_errors, uint32_t& read_errors)
 {
-    return checkCaseWithBuffers(diff, fb_old, fb_new, scenario, orientation, gap, compare_mask, raw_hash, mirror_hash, skip_errors);
+    return checkCaseWithBuffers(diff, fb_old, fb_new, scenario, orientation, gap, compare_mask, raw_hash, mirror_hash, skip_errors, read_errors);
 }
 
 static BenchResult runBenchWithBuffers(DiffBuff& diff, uint16_t* old_fb, uint16_t* new_fb, Scenario scenario, int orientation, int gap, bool copy_new_over_old,
@@ -348,14 +633,15 @@ static void runOne(DiffBuff& diff, const char* diff_name, int diff_size, const S
     uint64_t raw_hash = 0;
     uint64_t mirror_hash = 0;
     uint32_t skip_errors = 0;
-    const bool ok = checkCase(diff, scn.scenario, orientation, gap, scn.compare_mask, raw_hash, mirror_hash, skip_errors);
+    uint32_t read_errors = 0;
+    const bool ok = checkCase(diff, scn.scenario, orientation, gap, scn.compare_mask, raw_hash, mirror_hash, skip_errors, read_errors);
     const BenchResult r = runBench(diff, scn.scenario, orientation, gap, copy_new_over_old, scn.compare_mask);
 
     Serial.printf("diff=%s(%d),scn=%s,ori=%s,gap=%d,copy=%d,mask=%04x,avg=",
         diff_name, diff_size, scn.name, orientationName(orientation), gap, copy_new_over_old ? 1 : 0, scn.compare_mask);
     printAvg(r.total_us, ITER);
-    Serial.printf("us,min=%lu,max=%lu,size=%d,of=%lu,check=%s,skiperr=%lu,raw=",
-        r.min_us, r.max_us, r.last_size, r.overflow_count, ok ? "OK" : "FAIL", skip_errors);
+    Serial.printf("us,min=%lu,max=%lu,size=%d,of=%lu,check=%s,skiperr=%lu,readerr=%lu,raw=",
+        r.min_us, r.max_us, r.last_size, r.overflow_count, ok ? "OK" : "FAIL", skip_errors, read_errors);
     printHash(raw_hash);
     Serial.print(",mirror=");
     printHash(mirror_hash);
@@ -368,14 +654,15 @@ static void runOneWithBuffers(DiffBuff& diff, const char* diff_name, int diff_si
     uint64_t raw_hash = 0;
     uint64_t mirror_hash = 0;
     uint32_t skip_errors = 0;
-    const bool ok = checkCaseWithBuffers(diff, old_fb, new_fb, scn.scenario, orientation, gap, scn.compare_mask, raw_hash, mirror_hash, skip_errors);
+    uint32_t read_errors = 0;
+    const bool ok = checkCaseWithBuffers(diff, old_fb, new_fb, scn.scenario, orientation, gap, scn.compare_mask, raw_hash, mirror_hash, skip_errors, read_errors);
     const BenchResult r = runBenchWithBuffers(diff, old_fb, new_fb, scn.scenario, orientation, gap, copy_new_over_old, scn.compare_mask);
 
     Serial.printf("diff=%s(%d),scn=%s,ori=%s,gap=%d,copy=%d,mask=%04x,avg=",
         diff_name, diff_size, scn.name, orientationName(orientation), gap, copy_new_over_old ? 1 : 0, scn.compare_mask);
     printAvg(r.total_us, ITER);
-    Serial.printf("us,min=%lu,max=%lu,size=%d,of=%lu,check=%s,skiperr=%lu,raw=",
-        r.min_us, r.max_us, r.last_size, r.overflow_count, ok ? "OK" : "FAIL", skip_errors);
+    Serial.printf("us,min=%lu,max=%lu,size=%d,of=%lu,check=%s,skiperr=%lu,readerr=%lu,raw=",
+        r.min_us, r.max_us, r.last_size, r.overflow_count, ok ? "OK" : "FAIL", skip_errors, read_errors);
     printHash(raw_hash);
     Serial.print(",mirror=");
     printHash(mirror_hash);
@@ -403,6 +690,119 @@ static void runSuiteForDiff(DiffBuff& diff, const char* diff_name, int diff_size
             }
         }
     }
+}
+
+static PartialRegion makeRegion(uint16_t* sub, int stride, int orientation, int rw, int rh, uint32_t salt, int xdiv, int ydiv)
+{
+    const int sw = sourceWidth(orientation);
+    const int sh = sourceHeight(orientation);
+    PartialRegion region;
+    region.sub = sub;
+    region.xmin = sw / xdiv;
+    region.ymin = sh / ydiv;
+    if (region.xmin + rw >= sw) region.xmin = sw - rw - 1;
+    if (region.ymin + rh >= sh) region.ymin = sh - rh - 1;
+    region.xmax = region.xmin + rw - 1;
+    region.ymax = region.ymin + rh - 1;
+    region.stride = stride;
+    region.orientation = orientation;
+    fillSubBuffer(sub, stride, region.xmin, region.ymin, rw, rh, salt);
+    return region;
+}
+
+static void printApiResult(const char* name, int orientation, bool ok, uint32_t skip_errors, uint64_t h)
+{
+    Serial.printf("api=%s,ori=%s,check=%s,skiperr=%lu,hash=", name, orientationName(orientation), ok ? "OK" : "FAIL", skip_errors);
+    printHash(h);
+    Serial.println();
+}
+
+static void runCopyFullChecks()
+{
+    for (uint32_t o = 0; o < sizeof(orientations) / sizeof(orientations[0]); o++)
+    {
+        const int orientation = orientations[o];
+        fillFrame(fb_new, SCN_BLOCKS, orientation, true);
+        DiffBuffBase::copyfb(fb_old, fb_new, orientation);
+        uint64_t h = 0;
+        const bool ok = verifyMirror(fb_old, fb_new, orientation, 0, h);
+        printApiResult("copy_full", orientation, ok, 0, h);
+    }
+}
+
+static void runCopySubChecks()
+{
+    for (uint32_t o = 0; o < sizeof(orientations) / sizeof(orientations[0]); o++)
+    {
+        const int orientation = orientations[o];
+        fillCanonicalBase(fb_old);
+        const PartialRegion region = makeRegion(sub_a, SUB_STRIDE, orientation, SUBA_W, SUBA_H, 11, 5, 6);
+        DiffBuffBase::copyfb(fb_old, region.sub, region.xmin, region.xmax, region.ymin, region.ymax, region.stride, orientation);
+
+        uint64_t h = 0;
+        const bool ok = verifyMirrorPartial(fb_old, &region, 1, h);
+        printApiResult("copy_sub", orientation, ok, 0, h);
+    }
+}
+
+static void runPartialDiffChecks()
+{
+    for (uint32_t o = 0; o < sizeof(orientations) / sizeof(orientations[0]); o++)
+    {
+        const int orientation = orientations[o];
+        const PartialRegion region_a = makeRegion(sub_a, SUB_STRIDE, orientation, SUBA_W, SUBA_H, 21, 5, 6);
+        const PartialRegion region_b = makeRegion(sub_b, SUB_STRIDE, orientation, SUBB_W, SUBB_H, 37, 2, 3);
+
+        fillCanonicalBase(fb_old);
+        diff_large.computeDiff(fb_old, nullptr, region_a.sub, region_a.xmin, region_a.xmax, region_a.ymin, region_a.ymax, region_a.stride, orientation, 4, false, 0);
+        uint64_t h = 0;
+        uint32_t skip_errors = 0;
+        bool ok = verifyRawPartial(diff_large, &region_a, 1, h, skip_errors);
+        ok = ok && (skip_errors == 0);
+        printApiResult("partial_raw", orientation, ok, skip_errors, h);
+
+        fillCanonicalBase(fb_old);
+        diff_large.computeDiff(fb_old, nullptr, region_a.sub, region_a.xmin, region_a.xmax, region_a.ymin, region_a.ymax, region_a.stride, orientation, 4, true, 0);
+        ok = verifyMirrorPartial(fb_old, &region_a, 1, h);
+        printApiResult("partial_copy", orientation, ok, 0, h);
+
+        fillCanonicalBase(fb_old);
+        diff_aux.computeDiff(fb_old, nullptr, region_a.sub, region_a.xmin, region_a.xmax, region_a.ymin, region_a.ymax, region_a.stride, orientation, 4, false, 0);
+        diff_large.computeDiff(fb_old, &diff_aux, region_b.sub, region_b.xmin, region_b.xmax, region_b.ymin, region_b.ymax, region_b.stride, orientation, 4, false, 0);
+        PartialRegion regions[2] = { region_a, region_b };
+        skip_errors = 0;
+        ok = verifyRawPartial(diff_large, regions, 2, h, skip_errors);
+        ok = ok && (skip_errors == 0);
+        printApiResult("partial_merge", orientation, ok, skip_errors, h);
+    }
+}
+
+static void runDummyChecks()
+{
+    DiffBuffDummy dummy;
+    dummy.computeDummyDiff(3, LY - 5);
+    fillCanonicalBase(fb_new);
+
+    uint64_t raw_write_hash = 0;
+    uint32_t raw_write_pixels = 0;
+    uint32_t raw_write_errors = 0;
+    bool ok = hashRawWrites(dummy, fb_new, DiffBuffBase::PORTRAIT_240x320, 0, raw_write_hash, raw_write_pixels, raw_write_errors);
+    uint32_t read_errors = 0;
+    ok = ok && verifyReadDiff(dummy, fb_new, DiffBuffBase::PORTRAIT_240x320, 0, raw_write_hash, raw_write_pixels, read_errors);
+    ok = ok && (raw_write_pixels == (uint32_t)(LX * (LY - 8))) && (raw_write_errors == 0) && (read_errors == 0);
+
+    Serial.printf("api=dummy,ori=rot0,check=%s,rawerr=%lu,readerr=%lu,pixels=%lu,hash=",
+        ok ? "OK" : "FAIL", raw_write_errors, read_errors, raw_write_pixels);
+    printHash(raw_write_hash);
+    Serial.println();
+}
+
+static void runApiCorrectnessSuite()
+{
+    runCopyFullChecks();
+    runCopySubChecks();
+    runPartialDiffChecks();
+    runDummyChecks();
 }
 
 static void runUnalignedSuite()
@@ -435,9 +835,13 @@ void setup()
     Serial.println();
     Serial.println("ILI9341_T4 DiffBuff benchmark");
     Serial.printf("pixels=%d warmup=%d iter=%d large=%d small=%d\n", NB_PIXELS, WARMUP, ITER, LARGE_DIFF_SIZE, SMALL_DIFF_SIZE);
-    Serial.println("CSV-ish fields: diff,scn,ori,gap,copy,mask,avg,min,max,size,of,check,skiperr,raw,mirror");
+    Serial.println("CSV-ish fields: diff,scn,ori,gap,copy,mask,avg,min,max,size,of,check,skiperr,readerr,raw,mirror");
     Serial.println();
 
+    Serial.println("=== API CORRECTNESS: copy, partial diff, raw/read streams, dummy diff ===");
+    runApiCorrectnessSuite();
+
+    Serial.println();
     Serial.println("=== LARGE DIFF BUFFER: broad matrix, normally no overflow except very fragmented cases ===");
     runSuiteForDiff(diff_large, "large", LARGE_DIFF_SIZE, true);
 
