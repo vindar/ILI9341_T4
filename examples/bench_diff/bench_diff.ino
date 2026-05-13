@@ -275,11 +275,6 @@ static void prepareCase(uint16_t* old_fb, uint16_t* new_fb, Scenario scenario, i
     fillFrame(new_fb, scenario, orientation, true);
 }
 
-static void prepareCase(Scenario scenario, int orientation)
-{
-    prepareCase(fb_old, fb_new, scenario, orientation);
-}
-
 static bool checkCaseWithBuffers(DiffBuff& diff, uint16_t* old_fb, uint16_t* new_fb, Scenario scenario, int orientation, int gap, uint16_t compare_mask,
     uint64_t& raw_hash, uint64_t& mirror_hash, uint32_t& skip_errors)
 {
@@ -425,6 +420,8 @@ static void runUnalignedSuite()
     {
         runOneWithBuffers(diff_large, "unaligned", LARGE_DIFF_SIZE, unaligned_scenarios[s], DiffBuffBase::PORTRAIT_240x320, 4, true, old_unaligned, new_unaligned);
         runOneWithBuffers(diff_large, "unaligned", LARGE_DIFF_SIZE, unaligned_scenarios[s], DiffBuffBase::PORTRAIT_240x320, 4, false, old_unaligned, new_unaligned);
+        runOneWithBuffers(diff_large, "unaligned", LARGE_DIFF_SIZE, unaligned_scenarios[s], DiffBuffBase::PORTRAIT_240x320_FLIPPED, 4, true, old_unaligned, new_unaligned);
+        runOneWithBuffers(diff_large, "unaligned", LARGE_DIFF_SIZE, unaligned_scenarios[s], DiffBuffBase::PORTRAIT_240x320_FLIPPED, 4, false, old_unaligned, new_unaligned);
     }
 }
 
@@ -448,7 +445,7 @@ void setup()
     runSuiteForDiff(diff_small, "small", SMALL_DIFF_SIZE, false);
 
     Serial.println();
-    Serial.println("=== UNALIGNED ROT0: uint16_t buffers shifted by one pixel ===");
+    Serial.println("=== UNALIGNED ROT0/ROT180: uint16_t buffers shifted by one pixel ===");
     runUnalignedSuite();
 
     Serial.println();
