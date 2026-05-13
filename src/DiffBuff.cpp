@@ -4,6 +4,98 @@
 
 namespace ILI9341_T4
 {
+        static FLASHMEM void copyfbFromOffset(uint16_t* fb_old, const uint16_t* fb_new, int fb_new_orientation, int offset)
+            {
+            const int total = DiffBuffBase::LX * DiffBuffBase::LY;
+            if (offset >= total) return;
+            switch (fb_new_orientation)
+                {
+            case DiffBuffBase::PORTRAIT_240x320:
+                memcpy(fb_old + offset, fb_new + offset, sizeof(uint16_t) * (total - offset));
+                return;
+            case DiffBuffBase::LANDSCAPE_320x240:
+                for (int y = offset / DiffBuffBase::LX; y < DiffBuffBase::LY; y++)
+                    {
+                    const int x0 = offset - (DiffBuffBase::LX * y);
+                    uint16_t* pold = fb_old + x0 + (DiffBuffBase::LX * y);
+                    const uint16_t* pnew = fb_new + y + DiffBuffBase::LY * (DiffBuffBase::LX - 1 - x0);
+                    for (int x = x0; x < DiffBuffBase::LX; x++)
+                        {
+                        *(pold++) = *pnew;
+                        pnew -= DiffBuffBase::LY;
+                        }
+                    offset = DiffBuffBase::LX * (y + 1);
+                    }
+                return;
+            case DiffBuffBase::PORTRAIT_240x320_FLIPPED:
+                {
+                uint16_t* pold = fb_old + offset;
+                const uint16_t* pnew = fb_new + total - 1 - offset;
+                while (offset++ < total) { *(pold++) = *(pnew--); }
+                }
+                return;
+            case DiffBuffBase::LANDSCAPE_320x240_FLIPPED:
+                for (int y = offset / DiffBuffBase::LX; y < DiffBuffBase::LY; y++)
+                    {
+                    const int x0 = offset - (DiffBuffBase::LX * y);
+                    uint16_t* pold = fb_old + x0 + (DiffBuffBase::LX * y);
+                    const uint16_t* pnew = fb_new + (DiffBuffBase::LY - 1 - y) + DiffBuffBase::LY * x0;
+                    for (int x = x0; x < DiffBuffBase::LX; x++)
+                        {
+                        *(pold++) = *pnew;
+                        pnew += DiffBuffBase::LY;
+                        }
+                    offset = DiffBuffBase::LX * (y + 1);
+                    }
+                return;
+                }
+            }
+
+
+        static FLASHMEM void copySubFbFromOffset(uint16_t* fb_old, const uint16_t* sub_fb_new, int xmin, int xmax, int ymin, int ymax, int stride,
+            int fb_new_orientation, int offset)
+            {
+            for (int yc = ymin; yc <= ymax; yc++)
+                {
+                int m = 0, mdelta = 0;
+                switch (fb_new_orientation)
+                    {
+                case DiffBuffBase::PORTRAIT_240x320:
+                    m = stride * (yc - ymin);
+                    mdelta = 1;
+                    break;
+                case DiffBuffBase::LANDSCAPE_320x240:
+                    m = (yc - ymin) + stride * (xmax - xmin);
+                    mdelta = -stride;
+                    break;
+                case DiffBuffBase::PORTRAIT_240x320_FLIPPED:
+                    m = stride * (ymax - yc) + (xmax - xmin);
+                    mdelta = -1;
+                    break;
+                case DiffBuffBase::LANDSCAPE_320x240_FLIPPED:
+                    m = ymax - yc;
+                    mdelta = stride;
+                    break;
+                    }
+
+                int n = xmin + (DiffBuffBase::LX * yc);
+                const int nend = xmax + (DiffBuffBase::LX * yc);
+                if (offset > nend) continue;
+                if (offset > n)
+                    {
+                    const int d = offset - n;
+                    n += d;
+                    m += d * mdelta;
+                    }
+                while (n <= nend)
+                    {
+                    fb_old[n++] = sub_fb_new[m];
+                    m += mdelta;
+                    }
+                }
+            }
+
+
 
         FLASHMEM void DiffBuffBase::rotationBox(int orientation, int xmin, int xmax, int ymin, int ymax, int& x1, int& x2, int& y1, int& y2)
             {
@@ -201,25 +293,21 @@ namespace ILI9341_T4
 
 
         template<bool COPY_NEW_OVER_OLD, bool USE_MASK>
-        FLASHMEM void DiffBuff::_computeDiff(uint16_t* fb_old, const uint16_t* fb_new, int fb_new_orientation, int gap, uint16_t compare_mask)
+        FLASHMEM int DiffBuff::_computeDiff(uint16_t* fb_old, const uint16_t* fb_new, int fb_new_orientation, int gap, uint16_t compare_mask)
             {
             switch (fb_new_orientation)
                 {
                 case PORTRAIT_240x320:
-                    _computeDiff0<COPY_NEW_OVER_OLD, USE_MASK>(fb_old, fb_new, gap, compare_mask);
-                    return;
+                    return _computeDiff0<COPY_NEW_OVER_OLD, USE_MASK>(fb_old, fb_new, gap, compare_mask);
                 case LANDSCAPE_320x240:
-                    _computeDiff1<COPY_NEW_OVER_OLD, USE_MASK>(fb_old, fb_new, gap, compare_mask);
-                    return;
+                    return _computeDiff1<COPY_NEW_OVER_OLD, USE_MASK>(fb_old, fb_new, gap, compare_mask);
                 case PORTRAIT_240x320_FLIPPED:
-                    _computeDiff2<COPY_NEW_OVER_OLD, USE_MASK>(fb_old, fb_new, gap, compare_mask);
-                    return;
+                    return _computeDiff2<COPY_NEW_OVER_OLD, USE_MASK>(fb_old, fb_new, gap, compare_mask);
                 case LANDSCAPE_320x240_FLIPPED:
-                    _computeDiff3<COPY_NEW_OVER_OLD, USE_MASK>(fb_old, fb_new, gap, compare_mask);
-                    return;
+                    return _computeDiff3<COPY_NEW_OVER_OLD, USE_MASK>(fb_old, fb_new, gap, compare_mask);
                 }
             // hum...
-            return;
+            return 0;
             }
 
 
@@ -229,7 +317,7 @@ namespace ILI9341_T4
                                          if (COPY_NEW_OVER_OLD) { fb_old[n] = fb_new[ind]; }     \
                                          if (cgap >= gap)                                        \
                                              {                                                   \
-                                             if (!_write_chunk(n - pos - cgap, cgap)) return;    \
+                                             if (!_write_chunk(n - pos - cgap, cgap)) return n + 1;\
                                              pos = n;                                            \
                                              }                                                   \
                                          cgap = 0;                                               \
@@ -270,15 +358,16 @@ namespace ILI9341_T4
 #define COMPUTE_DIFF_END    { const int cpos = DiffBuffBase::LX * DiffBuffBase::LY;                   \
                               if (cpos - pos - cgap != 0)                 \
                                   {                                       \
-                                  _write_chunk(cpos - pos - cgap, cgap);  \
+                                  if (!_write_chunk(cpos - pos - cgap, cgap)) return cpos; \
                                   }                                       \
+                              return cpos;                                \
                             }
 
                             
 
 
         template<bool COPY_NEW_OVER_OLD, bool USE_MASK>
-        FLASHMEM void DiffBuff::_computeDiff0(uint16_t* fb_old, const uint16_t* fb_new, int gap, uint16_t compare_mask)
+        FLASHMEM int DiffBuff::_computeDiff0(uint16_t* fb_old, const uint16_t* fb_new, int gap, uint16_t compare_mask)
             {
             int cgap = 0;   // current gap size;
             int pos = 0;    // number of pixel written in diffbuf
@@ -292,7 +381,7 @@ namespace ILI9341_T4
             }
 
         template<bool COPY_NEW_OVER_OLD, bool USE_MASK>
-        FLASHMEM void DiffBuff::_computeDiff1(uint16_t* fb_old, const uint16_t* fb_new, int gap, uint16_t compare_mask)
+        FLASHMEM int DiffBuff::_computeDiff1(uint16_t* fb_old, const uint16_t* fb_new, int gap, uint16_t compare_mask)
             {
             int cgap = 0;   // current gap size;
             int pos = 0;    // number of pixel written in diffbuf
@@ -310,7 +399,7 @@ namespace ILI9341_T4
 
 
         template<bool COPY_NEW_OVER_OLD, bool USE_MASK>
-        FLASHMEM void DiffBuff::_computeDiff2(uint16_t* fb_old, const uint16_t* fb_new, int gap, uint16_t compare_mask)
+        FLASHMEM int DiffBuff::_computeDiff2(uint16_t* fb_old, const uint16_t* fb_new, int gap, uint16_t compare_mask)
             {
             int cgap = 0;   // current gap size;
             int pos = 0;    // number of pixel written in diffbuf
@@ -329,7 +418,7 @@ namespace ILI9341_T4
 
 
         template<bool COPY_NEW_OVER_OLD, bool USE_MASK>
-        FLASHMEM void DiffBuff::_computeDiff3(uint16_t* fb_old, const uint16_t* fb_new, int gap, uint16_t compare_mask)
+        FLASHMEM int DiffBuff::_computeDiff3(uint16_t* fb_old, const uint16_t* fb_new, int gap, uint16_t compare_mask)
             {
             int cgap = 0;   // current gap size;
             int pos = 0;    // number of pixel written in diffbuf
@@ -366,25 +455,31 @@ namespace ILI9341_T4
 //                initRead();
                 return;
                 }
-            if ((compare_mask != 0) && (compare_mask != 0xffff))
+            const bool use_mask = ((compare_mask != 0) && (compare_mask != 0xffff));
+            int copy_from = DiffBuffBase::LX * DiffBuffBase::LY;
+            if (use_mask)
                 {
                 if (copy_new_over_old) 
-                    _computeDiff<true, true>(fb_old, fb_new, fb_new_orientation, gap, compare_mask);
+                    copy_from = _computeDiff<true, true>(fb_old, fb_new, fb_new_orientation, gap, compare_mask);
                 else
-                    _computeDiff<false, true>(fb_old, fb_new, fb_new_orientation, gap, compare_mask);
+                    copy_from = _computeDiff<false, true>(fb_old, fb_new, fb_new_orientation, gap, compare_mask);
                 }
             else
                 {
                 if (copy_new_over_old)
-                    _computeDiff<true, false>(fb_old, fb_new, fb_new_orientation, gap, compare_mask);
+                    copy_from = _computeDiff<true, false>(fb_old, fb_new, fb_new_orientation, gap, compare_mask);
                 else
-                    _computeDiff<false, false>(fb_old, fb_new, fb_new_orientation, gap, compare_mask);
+                    copy_from = _computeDiff<false, false>(fb_old, fb_new, fb_new_orientation, gap, compare_mask);
                 }
 
             _write_encoded(TAG_END);
             if ((unsigned int)size() >= (unsigned int)_sizebuf)
                 { // diff is full so copy from new to old may not have been completed...
-                if (copy_new_over_old) copyfb(fb_old, fb_new, fb_new_orientation); // copy again. 
+                if (copy_new_over_old)
+                    {
+                    if (use_mask) copyfb(fb_old, fb_new, fb_new_orientation); // copy again.
+                    else copyfbFromOffset(fb_old, fb_new, fb_new_orientation, copy_from);
+                    }
                 }
 //            initRead();
             // done. record stats
@@ -515,12 +610,17 @@ namespace ILI9341_T4
             int x1, x2, y1, y2;
             DiffBuffBase::rotationBox(fb_new_orientation, xmin, xmax, ymin, ymax, x1, x2, y1, y2);
 
-            _computeDiff(fb_old, diff_old, sub_fb_new, x1, x2, y1, y2, stride, fb_new_orientation, gap, copy_new_over_old, compare_mask);
+            const bool use_mask = ((compare_mask != 0) && (compare_mask != 0xffff));
+            const int copy_from = _computeDiff(fb_old, diff_old, sub_fb_new, x1, x2, y1, y2, stride, fb_new_orientation, gap, copy_new_over_old, compare_mask);
 
             _write_encoded(TAG_END);
             if ((unsigned int)size() >= (unsigned int)_sizebuf)
                 { // diff is full so copy from new to old may not have been completed...
-                if (copy_new_over_old) copyfb(fb_old, sub_fb_new, xmin, xmax, ymin, ymax, stride, fb_new_orientation); // copy again. 
+                if (copy_new_over_old)
+                    {
+                    if (use_mask) copyfb(fb_old, sub_fb_new, xmin, xmax, ymin, ymax, stride, fb_new_orientation); // copy again.
+                    else copySubFbFromOffset(fb_old, sub_fb_new, x1, x2, y1, y2, stride, fb_new_orientation, copy_from);
+                    }
                 }
             // done. record stats
 //            initRead();
@@ -530,7 +630,7 @@ namespace ILI9341_T4
             }
 
 
-        FLASHMEM void DiffBuff::_computeDiff(uint16_t* fb_old, DiffBuffBase* diff_old, const uint16_t* sub_fb_new, int xmin, int xmax, int ymin, int ymax, int stride,
+        FLASHMEM int DiffBuff::_computeDiff(uint16_t* fb_old, DiffBuffBase* diff_old, const uint16_t* sub_fb_new, int xmin, int xmax, int ymin, int ymax, int stride,
             int fb_new_orientation, int gap, bool copy_new_over_old, uint16_t compare_mask)
             {
             DiffBuffDummy dd; 
@@ -560,7 +660,7 @@ namespace ILI9341_T4
                         {
                         if (cgap >= gap)
                             {
-                            if (!_write_chunk(cur - prv - cgap, cgap)) return;
+                            if (!_write_chunk(cur - prv - cgap, cgap)) return xmin + (DiffBuffBase::LX * ymin);
                             prv = cur;
                             }
                         cgap = 0;
@@ -607,7 +707,7 @@ namespace ILI9341_T4
                         if (cgap >= gap)
                             {
                             const int cur = xc + (DiffBuffBase::LX * yc);
-                            if (!_write_chunk(cur - prv - cgap, cgap)) return;
+                            if (!_write_chunk(cur - prv - cgap, cgap)) return xmin + (DiffBuffBase::LX * yc);
                             prv = cur;
                             }
                         cgap = 0;
@@ -676,7 +776,7 @@ namespace ILI9341_T4
                             }
                         if (cgap >= gap)
                             {
-                            if (!_write_chunk(n - prv - cgap, cgap)) return;
+                            if (!_write_chunk(n - prv - cgap, cgap)) return n + 1;
                             prv = n;
                             }
                         cgap = 0;
@@ -691,7 +791,7 @@ namespace ILI9341_T4
                         { // same pixel, nb_write > 0
                         if (cgap >= gap)
                             {
-                            if (!_write_chunk(n - prv - cgap, cgap)) return;
+                            if (!_write_chunk(n - prv - cgap, cgap)) return n + 1;
                             prv = n;
                             }
                         cgap = 0;
@@ -713,7 +813,7 @@ namespace ILI9341_T4
                         if (cgap >= gap)
                             {
                             const int cur = xc + (DiffBuffBase::LX * yc);
-                            if (!_write_chunk(cur - prv - cgap, cgap)) return;
+                            if (!_write_chunk(cur - prv - cgap, cgap)) return xmin + (DiffBuffBase::LX * (yc + 1));
                             prv = cur;
                             }
                         cgap = 0;
@@ -758,7 +858,7 @@ namespace ILI9341_T4
                         {
                         if (cgap >= gap)
                             {
-                            if (!_write_chunk(cur - prv - cgap, cgap)) return;
+                            if (!_write_chunk(cur - prv - cgap, cgap)) return DiffBuffBase::LX * DiffBuffBase::LY;
                             prv = cur;
                             }
                         cgap = 0;
@@ -798,8 +898,9 @@ namespace ILI9341_T4
             const int cpos = DiffBuffBase::LX * DiffBuffBase::LY;
             if (cpos - prv - cgap != 0)
                 {                                       
-                _write_chunk(cpos - prv - cgap, cgap);
+                if (!_write_chunk(cpos - prv - cgap, cgap)) return cpos;
                 }
+            return cpos;
 
             }
 

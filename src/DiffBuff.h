@@ -477,31 +477,31 @@ namespace ILI9341_T4
 
         /** templated version of computeDiff */
         template<bool COPY_NEW_OVER_OLD, bool USE_MASK>
-        void _computeDiff(uint16_t* fb_old, const uint16_t* fb_new, int fb_new_orientation, int gap, uint16_t compare_mask);
+        int _computeDiff(uint16_t* fb_old, const uint16_t* fb_new, int fb_new_orientation, int gap, uint16_t compare_mask);
 
 
         /** called when the src framebuffer is in orientation 0 */
         template<bool COPY_NEW_OVER_OLD, bool USE_MASK>
-        void _computeDiff0(uint16_t* fb_old, const uint16_t* fb_new, int gap, uint16_t compare_mask);
+        int _computeDiff0(uint16_t* fb_old, const uint16_t* fb_new, int gap, uint16_t compare_mask);
 
 
         /** called when the src framebuffer is in orientation 1 */
         template<bool COPY_NEW_OVER_OLD, bool USE_MASK>
-        void _computeDiff1(uint16_t* fb_old, const uint16_t* fb_new, int gap, uint16_t compare_mask);
+        int _computeDiff1(uint16_t* fb_old, const uint16_t* fb_new, int gap, uint16_t compare_mask);
 
 
         /** called when the src framebuffer is in orientation 2 */
         template<bool COPY_NEW_OVER_OLD, bool USE_MASK>
-        void _computeDiff2(uint16_t* fb_old, const uint16_t* fb_new, int gap, uint16_t compare_mask);
+        int _computeDiff2(uint16_t* fb_old, const uint16_t* fb_new, int gap, uint16_t compare_mask);
 
 
         /** called when the src framebuffer is in orientation 3 */
         template<bool COPY_NEW_OVER_OLD, bool USE_MASK>
-        void _computeDiff3(uint16_t* fb_old, const uint16_t* fb_new, int gap, uint16_t compare_mask);
+        int _computeDiff3(uint16_t* fb_old, const uint16_t* fb_new, int gap, uint16_t compare_mask);
 
 
         /** main method when computing partial diff */
-        void _computeDiff(uint16_t* fb_old, DiffBuffBase* diff_old, const uint16_t* sub_fb_new, int xmin, int xmax, int ymin, int ymax, int stride,
+        int _computeDiff(uint16_t* fb_old, DiffBuffBase* diff_old, const uint16_t* sub_fb_new, int xmin, int xmax, int ymin, int ymax, int stride,
                           int fb_new_orientation, int gap, bool copy_new_over_old, uint16_t compare_mask);
 
     };
