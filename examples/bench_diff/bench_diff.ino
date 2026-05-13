@@ -20,8 +20,8 @@ static constexpr int ITER = 60;
 static constexpr int LARGE_DIFF_SIZE = 60000;
 static constexpr int SMALL_DIFF_SIZE = 512;
 
-DMAMEM uint16_t fb_old[NB_PIXELS];
-DMAMEM uint16_t fb_new[NB_PIXELS];
+DMAMEM uint16_t fb_old[NB_PIXELS + 1];
+DMAMEM uint16_t fb_new[NB_PIXELS + 1];
 
 DiffBuffStatic<LARGE_DIFF_SIZE> diff_large;
 DiffBuffStatic<SMALL_DIFF_SIZE> diff_small;
@@ -268,30 +268,42 @@ static bool verifyMirror(const uint16_t* old_fb, const uint16_t* new_fb, int ori
     return h == expected;
 }
 
-static void prepareCase(Scenario scenario, int orientation)
+static void prepareCase(uint16_t* old_fb, uint16_t* new_fb, Scenario scenario, int orientation)
 {
-    fillFrame(fb_new, scenario, orientation, false);
-    DiffBuffBase::copyfb(fb_old, fb_new, orientation);
-    fillFrame(fb_new, scenario, orientation, true);
+    fillFrame(new_fb, scenario, orientation, false);
+    DiffBuffBase::copyfb(old_fb, new_fb, orientation);
+    fillFrame(new_fb, scenario, orientation, true);
 }
 
-static bool checkCase(DiffBuff& diff, Scenario scenario, int orientation, int gap, uint16_t compare_mask, uint64_t& raw_hash, uint64_t& mirror_hash, uint32_t& skip_errors)
+static void prepareCase(Scenario scenario, int orientation)
 {
-    prepareCase(scenario, orientation);
-    diff.computeDiff(fb_old, fb_new, orientation, gap, false, compare_mask);
+    prepareCase(fb_old, fb_new, scenario, orientation);
+}
 
-    const uint64_t expected = expectedHash(fb_new, orientation, compare_mask);
-    bool ok_raw = verifyRawDiff(diff, fb_old, fb_new, orientation, compare_mask, raw_hash, skip_errors);
+static bool checkCaseWithBuffers(DiffBuff& diff, uint16_t* old_fb, uint16_t* new_fb, Scenario scenario, int orientation, int gap, uint16_t compare_mask,
+    uint64_t& raw_hash, uint64_t& mirror_hash, uint32_t& skip_errors)
+{
+    prepareCase(old_fb, new_fb, scenario, orientation);
+    diff.computeDiff(old_fb, new_fb, orientation, gap, false, compare_mask);
+
+    const uint64_t expected = expectedHash(new_fb, orientation, compare_mask);
+    bool ok_raw = verifyRawDiff(diff, old_fb, new_fb, orientation, compare_mask, raw_hash, skip_errors);
     ok_raw = ok_raw && (raw_hash == expected) && (skip_errors == 0);
 
-    prepareCase(scenario, orientation);
-    diff.computeDiff(fb_old, fb_new, orientation, gap, true, compare_mask);
-    const bool ok_mirror = verifyMirror(fb_old, fb_new, orientation, compare_mask, mirror_hash);
+    prepareCase(old_fb, new_fb, scenario, orientation);
+    diff.computeDiff(old_fb, new_fb, orientation, gap, true, compare_mask);
+    const bool ok_mirror = verifyMirror(old_fb, new_fb, orientation, compare_mask, mirror_hash);
 
     return ok_raw && ok_mirror;
 }
 
-static BenchResult runBench(DiffBuff& diff, Scenario scenario, int orientation, int gap, bool copy_new_over_old, uint16_t compare_mask)
+static bool checkCase(DiffBuff& diff, Scenario scenario, int orientation, int gap, uint16_t compare_mask, uint64_t& raw_hash, uint64_t& mirror_hash, uint32_t& skip_errors)
+{
+    return checkCaseWithBuffers(diff, fb_old, fb_new, scenario, orientation, gap, compare_mask, raw_hash, mirror_hash, skip_errors);
+}
+
+static BenchResult runBenchWithBuffers(DiffBuff& diff, uint16_t* old_fb, uint16_t* new_fb, Scenario scenario, int orientation, int gap, bool copy_new_over_old,
+    uint16_t compare_mask)
 {
     BenchResult r;
     r.total_us = 0;
@@ -302,17 +314,17 @@ static BenchResult runBench(DiffBuff& diff, Scenario scenario, int orientation, 
 
     for (int i = 0; i < WARMUP; i++)
     {
-        prepareCase(scenario, orientation);
-        diff.computeDiff(fb_old, fb_new, orientation, gap, copy_new_over_old, compare_mask);
+        prepareCase(old_fb, new_fb, scenario, orientation);
+        diff.computeDiff(old_fb, new_fb, orientation, gap, copy_new_over_old, compare_mask);
         sink += diff.size();
     }
 
     diff.statsReset();
     for (int i = 0; i < ITER; i++)
     {
-        prepareCase(scenario, orientation);
+        prepareCase(old_fb, new_fb, scenario, orientation);
         elapsedMicros em = 0;
-        diff.computeDiff(fb_old, fb_new, orientation, gap, copy_new_over_old, compare_mask);
+        diff.computeDiff(old_fb, new_fb, orientation, gap, copy_new_over_old, compare_mask);
         const uint32_t dt = em;
         r.total_us += dt;
         if (dt < r.min_us) r.min_us = dt;
@@ -322,6 +334,11 @@ static BenchResult runBench(DiffBuff& diff, Scenario scenario, int orientation, 
     }
     r.overflow_count = diff.statsNbOverflow();
     return r;
+}
+
+static BenchResult runBench(DiffBuff& diff, Scenario scenario, int orientation, int gap, bool copy_new_over_old, uint16_t compare_mask)
+{
+    return runBenchWithBuffers(diff, fb_old, fb_new, scenario, orientation, gap, copy_new_over_old, compare_mask);
 }
 
 static void printAvg(uint64_t total_us, int count)
@@ -338,6 +355,26 @@ static void runOne(DiffBuff& diff, const char* diff_name, int diff_size, const S
     uint32_t skip_errors = 0;
     const bool ok = checkCase(diff, scn.scenario, orientation, gap, scn.compare_mask, raw_hash, mirror_hash, skip_errors);
     const BenchResult r = runBench(diff, scn.scenario, orientation, gap, copy_new_over_old, scn.compare_mask);
+
+    Serial.printf("diff=%s(%d),scn=%s,ori=%s,gap=%d,copy=%d,mask=%04x,avg=",
+        diff_name, diff_size, scn.name, orientationName(orientation), gap, copy_new_over_old ? 1 : 0, scn.compare_mask);
+    printAvg(r.total_us, ITER);
+    Serial.printf("us,min=%lu,max=%lu,size=%d,of=%lu,check=%s,skiperr=%lu,raw=",
+        r.min_us, r.max_us, r.last_size, r.overflow_count, ok ? "OK" : "FAIL", skip_errors);
+    printHash(raw_hash);
+    Serial.print(",mirror=");
+    printHash(mirror_hash);
+    Serial.println();
+}
+
+static void runOneWithBuffers(DiffBuff& diff, const char* diff_name, int diff_size, const ScenarioDef& scn, int orientation, int gap, bool copy_new_over_old,
+    uint16_t* old_fb, uint16_t* new_fb)
+{
+    uint64_t raw_hash = 0;
+    uint64_t mirror_hash = 0;
+    uint32_t skip_errors = 0;
+    const bool ok = checkCaseWithBuffers(diff, old_fb, new_fb, scn.scenario, orientation, gap, scn.compare_mask, raw_hash, mirror_hash, skip_errors);
+    const BenchResult r = runBenchWithBuffers(diff, old_fb, new_fb, scn.scenario, orientation, gap, copy_new_over_old, scn.compare_mask);
 
     Serial.printf("diff=%s(%d),scn=%s,ori=%s,gap=%d,copy=%d,mask=%04x,avg=",
         diff_name, diff_size, scn.name, orientationName(orientation), gap, copy_new_over_old ? 1 : 0, scn.compare_mask);
@@ -373,6 +410,24 @@ static void runSuiteForDiff(DiffBuff& diff, const char* diff_name, int diff_size
     }
 }
 
+static void runUnalignedSuite()
+{
+    uint16_t* const old_unaligned = fb_old + 1;
+    uint16_t* const new_unaligned = fb_new + 1;
+    const ScenarioDef unaligned_scenarios[] =
+    {
+        { "none_unaligned",     SCN_NO_CHANGE,  0 },
+        { "sparse64_unaligned", SCN_SPARSE_64,  0 },
+        { "blocks_unaligned",   SCN_BLOCKS,     0 },
+        { "all_unaligned",      SCN_ALL_CHANGE, 0 },
+    };
+    for (uint32_t s = 0; s < sizeof(unaligned_scenarios) / sizeof(unaligned_scenarios[0]); s++)
+    {
+        runOneWithBuffers(diff_large, "unaligned", LARGE_DIFF_SIZE, unaligned_scenarios[s], DiffBuffBase::PORTRAIT_240x320, 4, true, old_unaligned, new_unaligned);
+        runOneWithBuffers(diff_large, "unaligned", LARGE_DIFF_SIZE, unaligned_scenarios[s], DiffBuffBase::PORTRAIT_240x320, 4, false, old_unaligned, new_unaligned);
+    }
+}
+
 void setup()
 {
     Serial.begin(115200);
@@ -391,6 +446,10 @@ void setup()
     Serial.println();
     Serial.println("=== SMALL DIFF BUFFER: selected overflow stress cases ===");
     runSuiteForDiff(diff_small, "small", SMALL_DIFF_SIZE, false);
+
+    Serial.println();
+    Serial.println("=== UNALIGNED ROT0: uint16_t buffers shifted by one pixel ===");
+    runUnalignedSuite();
 
     Serial.println();
     Serial.printf("sink=%lu\n", sink);
