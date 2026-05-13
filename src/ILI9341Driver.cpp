@@ -1128,7 +1128,10 @@ namespace ILI9341_T4
     FLASHMEM void ILI9341Driver::updateRegion(bool redrawNow, const uint16_t* fb, int xmin, int xmax, int ymin, int ymax, int stride)
         {
         if (fb == nullptr) return;
+        if ((xmin > xmax) || (ymin > ymax)) return;
+        if ((xmin < 0) || (ymin < 0) || (xmax >= _width) || (ymax >= _height)) return;
         if (stride < 0) stride = xmax - xmin + 1;
+        if (stride <= 0) return;
         switch (bufferingMode())
             {
             case NO_BUFFERING:
