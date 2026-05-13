@@ -406,10 +406,10 @@ namespace ILI9341_T4
             int n = 0;      // current offset  
             for (int j = DiffBuffBase::LY - 1; j >= 0; j--)
                 {
+                const int oo = DiffBuffBase::LX * j;
                 int i = DiffBuffBase::LX - 1;
                 while (i >= 0)
                     {
-                    const int oo = DiffBuffBase::LX * j;
                     COMPUTE_DIFF_LOOP(((i--) + oo))
                     }
                 }
