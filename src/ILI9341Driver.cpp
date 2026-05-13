@@ -995,6 +995,8 @@ namespace ILI9341_T4
             _diff1 = diff2;
             _diff2 = diff1;
             }
+        statsReset();
+        resync();
         }
 
 
@@ -1016,6 +1018,9 @@ namespace ILI9341_T4
 
     FLASHMEM void ILI9341Driver::setDiffCompareMask(int bitskip_red, int bitskip_green, int bitskip_blue)
         {
+        bitskip_red = ILI9341Driver::_clip<int>(bitskip_red, 0, 5);
+        bitskip_green = ILI9341Driver::_clip<int>(bitskip_green, 0, 6);
+        bitskip_blue = ILI9341Driver::_clip<int>(bitskip_blue, 0, 5);
         _compare_mask = (((uint16_t)(((0xFF >> bitskip_red) << bitskip_red) & 31)) << 11)
                       | (((uint16_t)(((0xFF >> bitskip_green) << bitskip_green) & 63)) << 5)
                       | ((uint16_t)(((0xFF >> bitskip_blue) << bitskip_blue) & 31));
@@ -1992,26 +1997,34 @@ namespace ILI9341_T4
                 _pending_rx_count--;     // decrement count of bytes still levt
                 continue;
                 }
-            if ((em > 50) && (!warning_printed)) 
+            if (em > 1000)
                 {
-                _print("***  WARNING: hanging in  ILI9341Driver::_waitTransmitComplete() ...***\n");
                 const uint32_t sr = _pimxrt_spi->SR;
                 const uint32_t fsr = _pimxrt_spi->FSR;
                 const uint32_t rsr = _pimxrt_spi->RSR;
+                const uint32_t rx_count = (fsr >> 16) & 0x1F;
+                if (((rsr & LPSPI_RSR_RXEMPTY) == 0) || (sr & LPSPI_SR_RDF) || rx_count)
+                    {
+                    continue;
+                    }
                 const uint32_t cr = _pimxrt_spi->CR;
                 const uint32_t tcr = _pimxrt_spi->TCR;
                 const uint32_t fcr = _pimxrt_spi->FCR;
                 const uint32_t der = _pimxrt_spi->DER;
                 const uint32_t ier = _pimxrt_spi->IER;
-                _printf("    pending_rx=%u elapsed=%uus spi=%uHz\n", (uint32_t)_pending_rx_count, (uint32_t)em, _spi_clock);
-                _printf("    SR=%08lX FSR=%08lX RSR=%08lX CR=%08lX TCR=%08lX\n", (unsigned long)sr, (unsigned long)fsr, (unsigned long)rsr, (unsigned long)cr, (unsigned long)tcr);
-                _printf("    FCR=%08lX DER=%08lX IER=%08lX TXCOUNT=%u RXCOUNT=%u\n", (unsigned long)fcr, (unsigned long)der, (unsigned long)ier, (uint32_t)(fsr & 0x1F), (uint32_t)((fsr >> 16) & 0x1F));
-                _printf("    flags: MBF=%u TDF=%u RDF=%u TCF=%u RXEMPTY=%u\n", (uint32_t)((sr & LPSPI_SR_MBF) != 0), (uint32_t)((sr & LPSPI_SR_TDF) != 0), (uint32_t)((sr & LPSPI_SR_RDF) != 0), (uint32_t)((sr & LPSPI_SR_TCF) != 0), (uint32_t)((rsr & LPSPI_RSR_RXEMPTY) != 0));
-                warning_printed = true;
-                }
-            if ((em > 1000) && ((_pimxrt_spi->SR & LPSPI_SR_MBF) == 0) && ((_pimxrt_spi->FSR & 0x1f) == 0))
-                {
-                break; // pending count got out of sync; give up only once the bus is idle.
+                if (!warning_printed)
+                    {
+                    _print("***  WARNING: hanging in  ILI9341Driver::_waitTransmitComplete() ...***\n");
+                    _printf("    pending_rx=%u elapsed=%uus spi=%uHz\n", (uint32_t)_pending_rx_count, (uint32_t)em, _spi_clock);
+                    _printf("    SR=%08lX FSR=%08lX RSR=%08lX CR=%08lX TCR=%08lX\n", (unsigned long)sr, (unsigned long)fsr, (unsigned long)rsr, (unsigned long)cr, (unsigned long)tcr);
+                    _printf("    FCR=%08lX DER=%08lX IER=%08lX TXCOUNT=%u RXCOUNT=%u\n", (unsigned long)fcr, (unsigned long)der, (unsigned long)ier, (uint32_t)(fsr & 0x1F), (uint32_t)rx_count);
+                    _printf("    flags: MBF=%u TDF=%u RDF=%u TCF=%u RXEMPTY=%u\n", (uint32_t)((sr & LPSPI_SR_MBF) != 0), (uint32_t)((sr & LPSPI_SR_TDF) != 0), (uint32_t)((sr & LPSPI_SR_RDF) != 0), (uint32_t)((sr & LPSPI_SR_TCF) != 0), (uint32_t)((rsr & LPSPI_RSR_RXEMPTY) != 0));
+                    warning_printed = true;
+                    }
+                if (((sr & LPSPI_SR_MBF) == 0) && ((fsr & 0x1f) == 0))
+                    {
+                    break; // pending count got out of sync; give up only once the bus is idle.
+                    }
                 }
             }                
         _pimxrt_spi->CR = LPSPI_CR_MEN | LPSPI_CR_RRF; // Clear RX FIFO

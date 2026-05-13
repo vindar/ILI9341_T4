@@ -2122,7 +2122,7 @@ private:
         {       
         _pimxrt_spi->TCR = _dma_spi_tcr_assert;
         if (!_hardware_dc)
-            { // DC is controlled by SPI
+            { // DC is controlled by software GPIO
             while ((_pimxrt_spi->FSR & 0x1f)); // wait for output fifo to be empty (since the last instruction is a TCR command, it insures that we have good timing even if the last instruction is not yet executed !)                                                        
             _directWriteLow(_dcport, _dcpinmask);
             }
@@ -2132,7 +2132,7 @@ private:
         {
         _pimxrt_spi->TCR = _dma_spi_tcr_deassert;
         if (!_hardware_dc)
-            { // DC is controlled by SPI
+            { // DC is controlled by software GPIO
             while ((_pimxrt_spi->FSR & 0x1f)); // wait for output fifo to be empty (since the last instruction is a TCR command, it insures that we have good timing even if the last instruction is not yet executed !)                                                        
             _directWriteHigh(_dcport, _dcpinmask);
             }
@@ -2218,13 +2218,17 @@ private:
     /** convert from raw value to x coord (in orientation 0) */
     int _mapTouchX(int x, int A, int B)
         {
-        return ILI9341Driver::_clip<int>((int)roundf(ILI9341_T4_TFTWIDTH * ((float)(x - A)) / (B - A)), (int)0, (int)ILI9341_T4_TFTWIDTH - 1);
+        const int d = B - A;
+        if (d == 0) return 0;
+        return ILI9341Driver::_clip<int>((int)roundf(ILI9341_T4_TFTWIDTH * ((float)(x - A)) / d), (int)0, (int)ILI9341_T4_TFTWIDTH - 1);
         }
 
     /** convert from raw value to y coord (in orientation 0) */
     int _mapTouchY(int y, int C, int D)
         {
-        return ILI9341Driver::_clip<int>((int)roundf(ILI9341_T4_TFTHEIGHT * ((float)(y - C)) / (D - C)), (int)0, (int)ILI9341_T4_TFTHEIGHT - 1);
+        const int d = D - C;
+        if (d == 0) return 0;
+        return ILI9341Driver::_clip<int>((int)roundf(ILI9341_T4_TFTHEIGHT * ((float)(y - C)) / d), (int)0, (int)ILI9341_T4_TFTHEIGHT - 1);
         }
 
 
