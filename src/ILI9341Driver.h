@@ -1794,21 +1794,22 @@ private:
         {
         const uint32_t m = micros();
         const uint32_t max_us = (max(_vsync_spacing, 1) + 1) * _period;
+        const uint32_t dt = ustime - m; // unsigned delta is rollover-safe for micros().
         uint32_t us;
-        if (ustime <= m)
+        if ((int32_t)dt <= 0)
             {
             us = 1; 
             }
-        else if (ustime > m + max_us)
+        else if (dt > max_us)
             {
             us = max_us;
             _print("Abnormally large value for setTimerAt() : ");
-            _print(ustime - m);
+            _print(dt);
             _print(" us");
             }
         else
             {
-            us = ustime - m;
+            us = dt;
             }
         return _setTimerIn(us, timercb);
         }

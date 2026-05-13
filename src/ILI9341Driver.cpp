@@ -717,7 +717,7 @@ namespace ILI9341_T4
             {
             offset += (((-offset) / ILI9341_T4_TFTHEIGHT) + 1) * ILI9341_T4_TFTHEIGHT;
             }
-        offset = offset % 320;
+        offset = offset % ILI9341_T4_TFTHEIGHT;
         _waitUpdateAsyncComplete();
         _beginSPITransaction(_spi_clock);
         _writecommand_cont(ILI9341_T4_VSCRSADD);
