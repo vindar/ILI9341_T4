@@ -833,16 +833,19 @@ namespace ILI9341_T4
     FLASHMEM int ILI9341Driver::_getScanLine(bool sync)
         {
         if (_miso == 255) { _print("***  WARNING: _getScanLine called while MISO_PIN=255 ***\n"); }
+
         if ((!sync)||(_miso==255))
             {
+            if (_period == 0) return _synced_scanline;
             return ( _synced_scanline + ((((uint64_t)_synced_em)* ILI9341_T4_NB_SCANLINES) / _period) ) % ILI9341_T4_NB_SCANLINES;
             }
-    
+
         const auto estimatedScanline = [&]() -> int
             {
             if (_period == 0) return _synced_scanline;
             return ( _synced_scanline + ((((uint64_t)_synced_em)* ILI9341_T4_NB_SCANLINES) / _period) ) % ILI9341_T4_NB_SCANLINES;
             };
+
         const auto timeoutScanlineRead = [&]() -> int
             {
             _print("***  WARNING: timeout in ILI9341Driver::_getScanLine(); using estimated scanline ***\n");
@@ -900,53 +903,77 @@ namespace ILI9341_T4
 
     FLASHMEM void ILI9341Driver::_sampleRefreshRate()
         {
+        const auto setApproximateRefreshRate = [&]()
+            {
+            _period = (uint32_t)round(1000000.0f / ILI9341_T4_refresh_rates[_refreshmode]);
+            };
+
+        const auto useApproximateRefreshRateAfterTimeout = [&]()
+            {
+            setApproximateRefreshRate();
+            _println("***  WARNING: timeout in ILI9341Driver::_sampleRefreshRate(); using approximate refresh rate ***");
+            };
+
         if (_miso == 255)
             { // hack when MISO line not connected: approximate...
-            _period = (uint32_t)round(1000000.0f / ILI9341_T4_refresh_rates[_refreshmode]);
+            setApproximateRefreshRate();
             return;
             }
 
         const int NB_SAMPLE_FRAMES = 10;
+        static constexpr uint32_t SAMPLE_REFRESH_WAIT_TIMEOUT_US = 250000;
+
+        const auto waitScanlineZero = [&]() -> bool
+            {
+            elapsedMicros wait_em = 0;
+            while (_getScanLine(true) != 0)
+                {
+                if (wait_em > SAMPLE_REFRESH_WAIT_TIMEOUT_US) return false;
+                }
+            return true;
+            };
+
+        const auto waitScanlineNotZero = [&]() -> bool
+            {
+            elapsedMicros wait_em = 0;
+            while (_getScanLine(true) == 0)
+                {
+                if (wait_em > SAMPLE_REFRESH_WAIT_TIMEOUT_US) return false;
+                }
+            return true;
+            };
+
         elapsedMicros em = 0; // start counter 
+
         // wait to reach scanline 0
-        while (_getScanLine(true) != 0)
+        if (!waitScanlineZero())
             {
-            if (em > 1000000)
-                { // hanging...
-                em = 0;
-                _println("\n\nILI9341_T4 : Hanging inside _sampleRefreshRate(), cannot get to scan line 0...");
-                }
+            useApproximateRefreshRateAfterTimeout();
+            return;
             }
-        while (_getScanLine(true) == 0)
+
+        if (!waitScanlineNotZero())
             {
-            if (em > 1000000)
-                { // hanging...
-                em = 0;
-                _println("\n\nILI9341_T4 : Hanging inside _sampleRefreshRate() cannot get to scan line 1...");
-                }
-            } 
+            useApproximateRefreshRateAfterTimeout();
+            return;
+            }
+
         // ok, just start at scanline 1. 
         em = 0;
         for (int i = 0; i < NB_SAMPLE_FRAMES; i++)
             {
             delayMicroseconds(5000); // must be less than 200 FPS so wait at least 5ms
             // wait to reach scanline 0
-            while (_getScanLine(true) != 0)
+            if (!waitScanlineZero())
                 {
-                if (em > 1000000)
-                    { // hanging...
-                    em = 0;
-                    _println("\n\nILI9341_T4 : Hanging inside _sampleRefreshRate(), cannot get to scan line 0 (bis)...");
-                    }
+                useApproximateRefreshRateAfterTimeout();
+                return;
                 }
             // wait to begin scanline 1. 
-            while (_getScanLine(true) == 0)
+            if (!waitScanlineNotZero())
                 {
-                if (em > 1000000)
-                    { // hanging...
-                    em = 0;
-                    _println("\n\nILI9341_T4 : Hanging inside _sampleRefreshRate(), cannot get to scan line 0 (bis)...");
-                    }
+                useApproximateRefreshRateAfterTimeout();
+                return;
                 }
             }
         _period = (uint32_t)round(((float)em) / NB_SAMPLE_FRAMES);
