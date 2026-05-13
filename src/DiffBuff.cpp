@@ -323,6 +323,16 @@ namespace ILI9341_T4
                                          cgap = 0;                                               \
                                          }
 
+#define COMPUTE_DIFF_LOOP_SUB_VAL(NEWP)  {                                                       \
+                                         if (COPY_NEW_OVER_OLD) { fb_old[n] = (NEWP); }          \
+                                         if (cgap >= gap)                                        \
+                                             {                                                   \
+                                             if (!_write_chunk(n - pos - cgap, cgap)) return n + 1;\
+                                             pos = n;                                            \
+                                             }                                                   \
+                                         cgap = 0;                                               \
+                                         }
+
 
 #define COMPUTE_DIFF_LOOP_MASK(INDEX)    {                                                       \
                                          const int ind = (INDEX);                                \
@@ -340,6 +350,24 @@ namespace ILI9341_T4
                                          n++;                                                    \
                                          }
 
+#define COMPUTE_DIFF_LOOP_MASK_PTR(PTR, STEP) {                                                  \
+                                         const uint16_t newp = *(PTR);                           \
+                                         (PTR) += (STEP);                                        \
+                                         if (((fb_old[n]) ^ newp) & compare_mask)                \
+                                             COMPUTE_DIFF_LOOP_SUB_VAL(newp)                     \
+                                         else { cgap++; }                                        \
+                                         n++;                                                    \
+                                         }
+
+#define COMPUTE_DIFF_LOOP_NOMASK_PTR(PTR, STEP) {                                                \
+                                         const uint16_t newp = *(PTR);                           \
+                                         (PTR) += (STEP);                                        \
+                                         if (fb_old[n] != newp)                                  \
+                                             COMPUTE_DIFF_LOOP_SUB_VAL(newp)                     \
+                                         else { cgap++; }                                        \
+                                         n++;                                                    \
+                                         }
+
 
 #define COMPUTE_DIFF_LOOP(INDEX)    {                                       \
                                     if (USE_MASK)                           \
@@ -351,6 +379,19 @@ namespace ILI9341_T4
                                         {                                   \
                                         COMPUTE_DIFF_LOOP_NOMASK(INDEX)     \
                                         COMPUTE_DIFF_LOOP_NOMASK(INDEX)     \
+                                        }                                   \
+                                    }
+
+#define COMPUTE_DIFF_LOOP_PTR(PTR, STEP) {                                  \
+                                    if (USE_MASK)                           \
+                                        {                                   \
+                                        COMPUTE_DIFF_LOOP_MASK_PTR(PTR, STEP)\
+                                        COMPUTE_DIFF_LOOP_MASK_PTR(PTR, STEP)\
+                                        }                                   \
+                                    else                                    \
+                                        {                                   \
+                                        COMPUTE_DIFF_LOOP_NOMASK_PTR(PTR, STEP)\
+                                        COMPUTE_DIFF_LOOP_NOMASK_PTR(PTR, STEP)\
                                         }                                   \
                                     }
 
@@ -386,12 +427,28 @@ namespace ILI9341_T4
             int cgap = 0;   // current gap size;
             int pos = 0;    // number of pixel written in diffbuf
             int n = 0;      // current offset  
-            for (int i = 0; i < DiffBuffBase::LY; i++)
+            if (COPY_NEW_OVER_OLD)
                 {
-                int j = DiffBuffBase::LX - 1;
-                while (j >= 0)
+                for (int i = 0; i < DiffBuffBase::LY; i++)
                     {
-                    COMPUTE_DIFF_LOOP((i + DiffBuffBase::LY * (j--)))
+                    int j = DiffBuffBase::LX;
+                    const uint16_t* pnew = fb_new + i + (DiffBuffBase::LY * (DiffBuffBase::LX - 1));
+                    while (j > 0)
+                        {
+                        COMPUTE_DIFF_LOOP_PTR(pnew, -DiffBuffBase::LY)
+                        j -= 2;
+                        }
+                    }
+                }
+            else
+                {
+                for (int i = 0; i < DiffBuffBase::LY; i++)
+                    {
+                    int j = DiffBuffBase::LX - 1;
+                    while (j >= 0)
+                        {
+                        COMPUTE_DIFF_LOOP((i + DiffBuffBase::LY * (j--)))
+                        }
                     }
                 }
             COMPUTE_DIFF_END
@@ -423,12 +480,28 @@ namespace ILI9341_T4
             int cgap = 0;   // current gap size;
             int pos = 0;    // number of pixel written in diffbuf
             int n = 0;      // current offset  
-            for (int i = DiffBuffBase::LY - 1; i >= 0; i--)
+            if (COPY_NEW_OVER_OLD)
                 {
-                int j = 0;
-                while (j < DiffBuffBase::LX)
+                for (int i = DiffBuffBase::LY - 1; i >= 0; i--)
                     {
-                    COMPUTE_DIFF_LOOP((i + DiffBuffBase::LY * (j++)))
+                    int j = DiffBuffBase::LX;
+                    const uint16_t* pnew = fb_new + i;
+                    while (j > 0)
+                        {
+                        COMPUTE_DIFF_LOOP_PTR(pnew, DiffBuffBase::LY)
+                        j -= 2;
+                        }
+                    }
+                }
+            else
+                {
+                for (int i = DiffBuffBase::LY - 1; i >= 0; i--)
+                    {
+                    int j = 0;
+                    while (j < DiffBuffBase::LX)
+                        {
+                        COMPUTE_DIFF_LOOP((i + DiffBuffBase::LY * (j++)))
+                        }
                     }
                 }
             COMPUTE_DIFF_END
@@ -436,9 +509,13 @@ namespace ILI9341_T4
 
 
 #undef COMPUTE_DIFF_LOOP_SUB
+#undef COMPUTE_DIFF_LOOP_SUB_VAL
 #undef COMPUTE_DIFF_LOOP_MASK
 #undef COMPUTE_DIFF_LOOP_NOMASK
+#undef COMPUTE_DIFF_LOOP_MASK_PTR
+#undef COMPUTE_DIFF_LOOP_NOMASK_PTR
 #undef COMPUTE_DIFF_LOOP
+#undef COMPUTE_DIFF_LOOP_PTR
 #undef COMPUTE_DIFF_END
 
 
