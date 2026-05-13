@@ -425,10 +425,10 @@ namespace ILI9341_T4
             // we have a valid instruction in _r_x, _r_y, _r_len and _r_cont=true            
             x = _r_x;
             y = _r_y;
-            if ((scanline >=  _r_y) && (scanline < DiffBuffBase::LY) && (_r_y + MIN_SCANLINE_SPACE > scanline))
+            const int l = _r_y + MIN_SCANLINE_SPACE;
+            if ((scanline < DiffBuffBase::LY) && (scanline < l))
                 { // we must wait a bit.
                 len = 0;
-                const int l = _r_y + MIN_SCANLINE_SPACE;
                 return ((l < DiffBuffBase::LY) ? l : DiffBuffBase::LY);
                 }
             if (_r_x > 0)
