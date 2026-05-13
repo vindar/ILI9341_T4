@@ -415,6 +415,7 @@ static void runUnalignedSuite()
         { "sparse64_unaligned", SCN_SPARSE_64,  0 },
         { "blocks_unaligned",   SCN_BLOCKS,     0 },
         { "all_unaligned",      SCN_ALL_CHANGE, 0 },
+        { "mask_unaligned",     SCN_MASK_NOISE, 0xfffe },
     };
     for (uint32_t s = 0; s < sizeof(unaligned_scenarios) / sizeof(unaligned_scenarios[0]); s++)
     {

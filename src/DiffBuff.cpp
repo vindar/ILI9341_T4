@@ -357,6 +357,13 @@ namespace ILI9341_T4
                                          n++;                                                    \
                                          }
 
+#define COMPUTE_DIFF_LOOP_MASK_VAL(OLDP, NEWP) {                                                 \
+                                         if (((OLDP) ^ (NEWP)) & compare_mask)                   \
+                                             COMPUTE_DIFF_LOOP_SUB_VAL(NEWP)                     \
+                                         else { cgap++; }                                        \
+                                         n++;                                                    \
+                                         }
+
 #define COMPUTE_DIFF_LOOP_MASK_PTR(PTR, STEP) {                                                  \
                                          const uint16_t newp = *(PTR);                           \
                                          (PTR) += (STEP);                                        \
@@ -420,17 +427,18 @@ namespace ILI9341_T4
             int cgap = 0;   // current gap size;
             int pos = 0;    // number of pixel written in diffbuf
             int n = 0;      // current offset  
-            if ((!USE_MASK) && ((((uintptr_t)fb_old) | ((uintptr_t)fb_new)) & 3) == 0)
+            if (((((uintptr_t)fb_old) | ((uintptr_t)fb_new)) & 3) == 0)
                 {
                 const uint32_t* pold32 = (const uint32_t*)fb_old;
                 const uint32_t* pnew32 = (const uint32_t*)fb_new;
+                const uint32_t mask32 = ((uint32_t)compare_mask) | (((uint32_t)compare_mask) << 16);
                 const int nb32 = (DiffBuffBase::LX * DiffBuffBase::LY) / 2;
                 int m = 0;
                 while (m < nb32)
                     {
                     const uint32_t old2 = pold32[m];
                     const uint32_t new2 = pnew32[m++];
-                    if (old2 == new2)
+                    if (USE_MASK ? (((old2 ^ new2) & mask32) == 0) : (old2 == new2))
                         {
                         cgap += 2;
                         n += 2;
@@ -439,10 +447,24 @@ namespace ILI9341_T4
                         {
                         const uint16_t oldp0 = (uint16_t)old2;
                         const uint16_t newp0 = (uint16_t)new2;
-                        COMPUTE_DIFF_LOOP_NOMASK_VAL(oldp0, newp0)
+                        if (USE_MASK)
+                            {
+                            COMPUTE_DIFF_LOOP_MASK_VAL(oldp0, newp0)
+                            }
+                        else
+                            {
+                            COMPUTE_DIFF_LOOP_NOMASK_VAL(oldp0, newp0)
+                            }
                         const uint16_t oldp1 = (uint16_t)(old2 >> 16);
                         const uint16_t newp1 = (uint16_t)(new2 >> 16);
-                        COMPUTE_DIFF_LOOP_NOMASK_VAL(oldp1, newp1)
+                        if (USE_MASK)
+                            {
+                            COMPUTE_DIFF_LOOP_MASK_VAL(oldp1, newp1)
+                            }
+                        else
+                            {
+                            COMPUTE_DIFF_LOOP_NOMASK_VAL(oldp1, newp1)
+                            }
                         }
                     }
                 COMPUTE_DIFF_END
@@ -495,10 +517,11 @@ namespace ILI9341_T4
             int cgap = 0;   // current gap size;
             int pos = 0;    // number of pixel written in diffbuf
             int n = 0;      // current offset  
-            if ((!USE_MASK) && ((((uintptr_t)fb_old) | ((uintptr_t)fb_new)) & 3) == 0)
+            if (((((uintptr_t)fb_old) | ((uintptr_t)fb_new)) & 3) == 0)
                 {
                 const uint32_t* pold32 = (const uint32_t*)fb_old;
                 const uint32_t* pnew32 = (const uint32_t*)fb_new;
+                const uint32_t mask32 = ((uint32_t)compare_mask) | (((uint32_t)compare_mask) << 16);
                 const int nb32 = (DiffBuffBase::LX * DiffBuffBase::LY) / 2;
                 int m = 0;
                 while (m < nb32)
@@ -507,7 +530,7 @@ namespace ILI9341_T4
                     const uint32_t new2raw = pnew32[nb32 - 1 - m];
                     const uint32_t new2 = (new2raw << 16) | (new2raw >> 16);
                     m++;
-                    if (old2 == new2)
+                    if (USE_MASK ? (((old2 ^ new2) & mask32) == 0) : (old2 == new2))
                         {
                         cgap += 2;
                         n += 2;
@@ -516,10 +539,24 @@ namespace ILI9341_T4
                         {
                         const uint16_t oldp0 = (uint16_t)old2;
                         const uint16_t newp0 = (uint16_t)new2;
-                        COMPUTE_DIFF_LOOP_NOMASK_VAL(oldp0, newp0)
+                        if (USE_MASK)
+                            {
+                            COMPUTE_DIFF_LOOP_MASK_VAL(oldp0, newp0)
+                            }
+                        else
+                            {
+                            COMPUTE_DIFF_LOOP_NOMASK_VAL(oldp0, newp0)
+                            }
                         const uint16_t oldp1 = (uint16_t)(old2 >> 16);
                         const uint16_t newp1 = (uint16_t)(new2 >> 16);
-                        COMPUTE_DIFF_LOOP_NOMASK_VAL(oldp1, newp1)
+                        if (USE_MASK)
+                            {
+                            COMPUTE_DIFF_LOOP_MASK_VAL(oldp1, newp1)
+                            }
+                        else
+                            {
+                            COMPUTE_DIFF_LOOP_NOMASK_VAL(oldp1, newp1)
+                            }
                         }
                     }
                 COMPUTE_DIFF_END
@@ -576,6 +613,7 @@ namespace ILI9341_T4
 #undef COMPUTE_DIFF_LOOP_MASK
 #undef COMPUTE_DIFF_LOOP_NOMASK
 #undef COMPUTE_DIFF_LOOP_NOMASK_VAL
+#undef COMPUTE_DIFF_LOOP_MASK_VAL
 #undef COMPUTE_DIFF_LOOP_MASK_PTR
 #undef COMPUTE_DIFF_LOOP_NOMASK_PTR
 #undef COMPUTE_DIFF_LOOP
