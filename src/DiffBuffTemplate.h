@@ -18,6 +18,10 @@
 #define T4DIFF_ALWAYS_INLINE __attribute__((always_inline))
 #endif
 
+#ifndef T4DIFF_INLINE_COMPUTE_KERNEL
+#define T4DIFF_INLINE_COMPUTE_KERNEL inline __attribute__((always_inline))
+#endif
+
 namespace T4Diff
 {
     /******************************************************************************************
@@ -971,7 +975,7 @@ namespace T4Diff
 
         template<class Traits>
         template<bool COPY_NEW_OVER_OLD, bool USE_MASK>
-        FLASHMEM int DiffBuffT<Traits>::_computeDiff(uint16_t* fb_old, const uint16_t* fb_new, int fb_new_orientation, int gap, uint16_t compare_mask)
+        T4DIFF_INLINE_COMPUTE_KERNEL int DiffBuffT<Traits>::_computeDiff(uint16_t* fb_old, const uint16_t* fb_new, int fb_new_orientation, int gap, uint16_t compare_mask)
             {
             switch (fb_new_orientation)
                 {
@@ -1101,7 +1105,7 @@ namespace T4Diff
 
         template<class Traits>
         template<bool COPY_NEW_OVER_OLD, bool USE_MASK>
-        FLASHMEM int DiffBuffT<Traits>::_computeDiff0(uint16_t* fb_old, const uint16_t* fb_new, int gap, uint16_t compare_mask)
+        T4DIFF_INLINE_COMPUTE_KERNEL int DiffBuffT<Traits>::_computeDiff0(uint16_t* fb_old, const uint16_t* fb_new, int gap, uint16_t compare_mask)
             {
             int cgap = 0;   // current gap size;
             int pos = 0;    // number of pixel written in diffbuf
@@ -1158,7 +1162,7 @@ namespace T4Diff
 
         template<class Traits>
         template<bool COPY_NEW_OVER_OLD, bool USE_MASK>
-        FLASHMEM int DiffBuffT<Traits>::_computeDiff1(uint16_t* fb_old, const uint16_t* fb_new, int gap, uint16_t compare_mask)
+        T4DIFF_INLINE_COMPUTE_KERNEL int DiffBuffT<Traits>::_computeDiff1(uint16_t* fb_old, const uint16_t* fb_new, int gap, uint16_t compare_mask)
             {
             int cgap = 0;   // current gap size;
             int pos = 0;    // number of pixel written in diffbuf
@@ -1193,7 +1197,7 @@ namespace T4Diff
 
         template<class Traits>
         template<bool COPY_NEW_OVER_OLD, bool USE_MASK>
-        FLASHMEM int DiffBuffT<Traits>::_computeDiff2(uint16_t* fb_old, const uint16_t* fb_new, int gap, uint16_t compare_mask)
+        T4DIFF_INLINE_COMPUTE_KERNEL int DiffBuffT<Traits>::_computeDiff2(uint16_t* fb_old, const uint16_t* fb_new, int gap, uint16_t compare_mask)
             {
             int cgap = 0;   // current gap size;
             int pos = 0;    // number of pixel written in diffbuf
@@ -1257,7 +1261,7 @@ namespace T4Diff
 
         template<class Traits>
         template<bool COPY_NEW_OVER_OLD, bool USE_MASK>
-        FLASHMEM int DiffBuffT<Traits>::_computeDiff3(uint16_t* fb_old, const uint16_t* fb_new, int gap, uint16_t compare_mask)
+        T4DIFF_INLINE_COMPUTE_KERNEL int DiffBuffT<Traits>::_computeDiff3(uint16_t* fb_old, const uint16_t* fb_new, int gap, uint16_t compare_mask)
             {
             int cgap = 0;   // current gap size;
             int pos = 0;    // number of pixel written in diffbuf
